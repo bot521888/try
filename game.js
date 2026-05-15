@@ -1382,7 +1382,9 @@ let deathSpriteP2 = null;
     god_generic: '神技',
     stat_time: '通关时间',
     stat_hits: '受击次数',
-    stat_combo: '最大连击',
+    stat_combo: '分数',
+    stat_score_hint: '（每存活 1 秒 = 3 分）',
+    endless_cycle: '难度提升 · 下一循环',
     btn_retry: 'RETRY',
     btn_next_stage: '进入第二关',
     btn_restart_run: '重新开始',
@@ -1482,7 +1484,9 @@ let deathSpriteP2 = null;
     god_generic: 'God skill',
     stat_time: 'Clear time',
     stat_hits: 'Times hit',
-    stat_combo: 'Max combo',
+    stat_combo: 'Score',
+    stat_score_hint: '(3 points per second survived)',
+    endless_cycle: 'Difficulty up · next loop',
     btn_retry: 'RETRY',
     btn_next_stage: 'Act II',
     btn_restart_run: 'Restart run',
@@ -6594,7 +6598,15 @@ let deathSpriteP2 = null;
       ],
     },
   ];
-  let currentStages = level1Stages;
+
+  /** 无尽：原 L1+L2+L3 全部波次顺序循环；endlessSection 仅用于换背景 */
+  function buildEndlessStages() {
+    const tag = (arr, sec) => arr.map((s) => ({ ...s, endlessSection: sec }));
+    return [...tag(level1Stages, 1), ...tag(level2Stages, 2), ...tag(level3Stages, 3)];
+  }
+  const endlessStages = buildEndlessStages();
+
+  let currentStages = endlessStages;
   let currentCampaignLevel = 1;
   let awaitingNextLevel = false;
 
@@ -6613,13 +6625,34 @@ let deathSpriteP2 = null;
     gotoNextStage() {
       this.index += 1;
       if (this.index >= currentStages.length) {
-        this.state = 'finished';
-        this.labelText = 'CLEAR';
+        if (isVersusMode) {
+          this.state = 'finished';
+          this.labelText = 'CLEAR';
+          this.labelTimer = this.labelDuration;
+          return;
+        }
+        // 无尽：一轮（原第三关全部波次之后）结束 → 敌人更难，立刻进入下一轮
+        bumpEnemyClearRankAfterFinale();
+        projectiles.length = 0;
+        angelMinionBolts.length = 0;
+        bossAoes.length = 0;
+        enemies.length = 0;
+        player.x = 120;
+        player.y = config.groundY - config.playerHeight;
+        player.vx = 0;
+        player.vy = 0;
+        if (isCoopMode && player2.state === 'alive') {
+          player2.x = 180;
+          player2.y = config.groundY - config.playerHeight;
+          player2.vx = 0;
+          player2.vy = 0;
+        }
+        this.index = -1;
+        this.state = 'running';
+        this.labelText = tr('endless_cycle');
         this.labelTimer = this.labelDuration;
+        this.gotoNextStage();
         return;
-      }
-      if (this.index === 0 && currentCampaignLevel === 1) {
-        stats.gameStartTime = performance.now();
       }
 
       const stage = currentStages[this.index];
@@ -6678,6 +6711,13 @@ let deathSpriteP2 = null;
       return Math.min(1, p * 2);
     },
   };
+
+  function getEndlessVisualSection() {
+    const idx = StageController.index;
+    if (idx < 0 || idx >= currentStages.length) return 1;
+    const st = currentStages[idx];
+    return st && st.endlessSection ? st.endlessSection : 1;
+  }
 
   /** 第一关通关后进入第二关：换背景与阶段表，不清累计通关计时 */
   function startCampaignLevel2() {
@@ -6742,8 +6782,9 @@ let deathSpriteP2 = null;
 
     afterLevel1CheckpointAccepted = true;
     currentCampaignLevel = 3;
-    currentStages = level3Stages;
-    StageController.index = 2;
+    currentStages = endlessStages;
+    StageController.index =
+      level1Stages.length + level2Stages.length + level3Stages.length - 2;
     StageController.state = 'idle';
     StageController.transitionTimer = 0;
     StageController.labelText = '';
@@ -6761,20 +6802,19 @@ let deathSpriteP2 = null;
   let afterLevel1CheckpointAccepted = false;
 
   function applySettlementStatsAndGrade() {
-    const clearTimeMs = performance.now() - stats.gameStartTime;
+    const clearTimeMs = Math.max(0, performance.now() - stats.gameStartTime);
     const clearTimeSec = Math.floor(clearTimeMs / 1000);
+    const survivalScore = clearTimeSec * 3;
     const mm = Math.floor(clearTimeSec / 60);
     const ss = String(clearTimeSec % 60).padStart(2, '0');
     statTimeEl.textContent = `${mm}:${ss}`;
     statHitsEl.textContent = String(stats.hitCount);
-    statComboEl.textContent = String(stats.maxCombo);
+    statComboEl.textContent = String(survivalScore);
 
-    const threeMin = 3 * 60 * 1000;
-    let grade = 'B';
-    if (stats.hitCount < 5 && clearTimeMs < threeMin) grade = 'S';
-    else if (stats.hitCount < 10) grade = 'A';
-    gradeEl.textContent = grade;
-    gradeEl.className = 'settlement-grade ' + grade.toLowerCase();
+    if (gradeEl) {
+      gradeEl.textContent = String(survivalScore);
+      gradeEl.className = 'settlement-grade s';
+    }
   }
 
   /** 第一关第三波结束：展示本关统计，不播通关曲，静音关卡 BGM，询问是否进第二关 */
@@ -7048,11 +7088,8 @@ let deathSpriteP2 = null;
     if (rbGo) rbGo.classList.remove('hidden');
 
     if (settlementTitleEl) settlementTitleEl.textContent = tr('settle_defeat_title');
-    // 标题 / 评分简单写死为 YOU DIED
-    if (gradeEl) {
-      gradeEl.textContent = 'YOU DIED';
-      gradeEl.className = 'settlement-grade dead';
-    }
+    applySettlementStatsAndGrade();
+    if (gradeEl) gradeEl.className = 'settlement-grade dead';
     if (buffEl) {
       buffEl.textContent = '';
       buffEl.classList.add('hidden');
@@ -7364,8 +7401,7 @@ let deathSpriteP2 = null;
     stopSettlementScreenMusic();
     void BGM.start(); // 重新加载并播放关卡循环 BGM
     awaitingNextLevel = false;
-    currentCampaignLevel = 1;
-    currentStages = level1Stages;
+    currentStages = endlessStages;
     if (versusArena) {
       isVersusMode = true;
       isCoopMode = true;
@@ -7382,9 +7418,9 @@ let deathSpriteP2 = null;
       versusIntermissionTimer = 0;
       versusRoundArmed = true;
       versusBannerKey = '';
-      stats.reset();
       stats.gameStartTime = performance.now();
     } else {
+      stats.gameStartTime = performance.now();
       StageController.index = -1;
       StageController.state = 'idle';
       StageController.transitionTimer = 0;
@@ -7560,33 +7596,6 @@ let deathSpriteP2 = null;
     }
 
     if (gameState === 'settlement') return;
-
-    if (StageController.state === 'finished' && !settlementShown && !isVersusMode) {
-      if (currentCampaignLevel === 1 && !afterLevel1CheckpointAccepted) {
-        showLevel1CheckpointSettlement();
-        settlementShown = true;
-      } else if (currentCampaignLevel === 2 && afterLevel1CheckpointAccepted) {
-        showPostLevel2Choice();
-        settlementShown = true;
-      } else if (currentCampaignLevel === 3) {
-        bumpEnemyClearRankAfterFinale();
-        if (roninMode) {
-          showLevel3ClearAlreadyMaxSettlement();
-        } else if (thorMode) {
-          showRoninFinaleSettlement();
-        } else if (demonMode) {
-          showThorFinaleSettlement();
-        } else if (angelMode) {
-          showDemonFinaleSettlement();
-        } else if (berserkerMode) {
-          showAngelFinaleSettlement();
-        } else {
-          showBerserkerFinaleSettlement();
-        }
-        settlementShown = true;
-      }
-      return;
-    }
 
     const t = performance.now() / 1000;
 
@@ -7829,7 +7838,7 @@ let deathSpriteP2 = null;
 
     // 1) 铺满背景图（第二关用 sceneBgLevel2）
     const parallaxBg =
-      currentCampaignLevel >= 2 && sceneBgLevel2.complete && sceneBgLevel2.naturalWidth > 0
+      getEndlessVisualSection() >= 2 && sceneBgLevel2.complete && sceneBgLevel2.naturalWidth > 0
         ? sceneBgLevel2
         : sceneBg;
     if (parallaxBg && parallaxBg.complete && parallaxBg.naturalWidth > 0 && parallaxBg.naturalHeight > 0) {
