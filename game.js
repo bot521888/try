@@ -1267,17 +1267,24 @@ let deathSpriteP2 = null;
     } catch (_) {}
   }
   let enemyClearRank = loadEnemyClearRank();
+  /** 无尽：每通一轮（原第三关整段）+1，全体怪/Boss 再 ×2（与 rank 叠乘）；新开局清零 */
+  let endlessCombatStack = 0;
   function bumpEnemyClearRankAfterFinale() {
     enemyClearRank = Math.min(80, enemyClearRank + 1);
     saveEnemyClearRank(enemyClearRank);
   }
-  /** 周目倍率：线性叠乘 + 上限，避免数值爆炸 */
+  /** 周目倍率：rank 线性叠乘 + 上限；无尽每通一轮再叠一层 ×2（血/伤），速度略涨 */
   function getEnemyDifficultyMultipliers() {
     const r = Math.min(30, Math.max(0, enemyClearRank));
+    const baseHp = Math.min(3.6, 1 + r * 0.17);
+    const baseDmg = Math.min(3.3, 1 + r * 0.15);
+    const baseSpd = Math.min(1.38, 1 + r * 0.055);
+    const stack = Math.min(10, Math.max(0, endlessCombatStack));
+    const cycleMul = Math.pow(2, stack);
     return {
-      hp: Math.min(3.6, 1 + r * 0.17),
-      dmg: Math.min(3.3, 1 + r * 0.15),
-      spd: Math.min(1.38, 1 + r * 0.055),
+      hp: baseHp * cycleMul,
+      dmg: baseDmg * cycleMul,
+      spd: Math.min(2.0, baseSpd * (1 + stack * 0.07)),
     };
   }
 
@@ -6633,6 +6640,7 @@ let deathSpriteP2 = null;
         }
         // 无尽：每通一轮（原第三关全部波次之后）→ 敌人更难 + 与旧版相同的神阶结算升级；点 RETRY 后再开下一轮
         bumpEnemyClearRankAfterFinale();
+        endlessCombatStack = Math.min(10, endlessCombatStack + 1);
         projectiles.length = 0;
         angelMinionBolts.length = 0;
         bossAoes.length = 0;
@@ -7229,6 +7237,16 @@ let deathSpriteP2 = null;
     const keepThor = options.keepThor === true;
     const keepRonin = options.keepRonin === true;
     const keepStarter = options.keepStarter === true;
+    const preserveEndlessStack =
+      keepBerserker ||
+      keepAngel ||
+      keepDemon ||
+      keepThor ||
+      keepRonin ||
+      keepStarter;
+    if (!preserveEndlessStack) {
+      endlessCombatStack = 0;
+    }
     if (!versusArena) {
       isVersusMode = false;
       // Co-op 子菜单只写了 gameMode = 'coop'，必须在此同步，否则 P2 不显示
