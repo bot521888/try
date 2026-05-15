@@ -6719,7 +6719,7 @@ let deathSpriteP2 = null;
     return st && st.endlessSection ? st.endlessSection : 1;
   }
 
-  /** 第一关通关后进入第二关：换背景与阶段表，不清累计通关计时 */
+  /** 兼容旧调用：仍用无尽总表，从「原第二关第一波」起打 */
   function startCampaignLevel2() {
     projectiles.length = 0;
     angelMinionBolts.length = 0;
@@ -6728,8 +6728,8 @@ let deathSpriteP2 = null;
     player.x = config.playerStartX;
     player.vx = 0;
     currentCampaignLevel = 2;
-    currentStages = level2Stages;
-    StageController.index = -1;
+    currentStages = endlessStages;
+    StageController.index = level1Stages.length - 1;
     StageController.state = 'idle';
     StageController.transitionTimer = 0;
     StageController.labelText = '';
@@ -6737,6 +6737,7 @@ let deathSpriteP2 = null;
     StageController.gotoNextStage();
   }
 
+  /** 兼容旧调用：无尽总表，从「原第三关第一波」起打 */
   function startCampaignLevel3() {
     projectiles.length = 0;
     angelMinionBolts.length = 0;
@@ -6745,8 +6746,8 @@ let deathSpriteP2 = null;
     player.x = config.playerStartX;
     player.vx = 0;
     currentCampaignLevel = 3;
-    currentStages = level3Stages;
-    StageController.index = -1;
+    currentStages = endlessStages;
+    StageController.index = level1Stages.length + level2Stages.length - 1;
     StageController.state = 'idle';
     StageController.transitionTimer = 0;
     StageController.labelText = '';
