@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- 开发时减轻浏览器强缓存：配合下方 ?v= 修改 -->
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <title>横版格斗 Demo</title>
+  <link rel="stylesheet" href="style.css?v=3" />
+</head>
+
+<body>
+  <div id="settlement-overlay" class="settlement-overlay hidden">
+    <div class="settlement-panel">
+      <div id="settlement-title" class="settlement-title">RESULT</div>
+      <div id="settlement-grade" class="settlement-grade">-</div>
+      <div class="settlement-stats">
+        <div class="stat-row"><span id="stat-lbl-time">通关时间</span><span id="stat-time">0:00</span></div>
+        <div class="stat-row"><span id="stat-lbl-hits">受击次数</span><span id="stat-hits">0</span></div>
+        <div class="stat-row"><span id="stat-lbl-combo">最大连击</span><span id="stat-combo">0</span></div>
+      </div>
+      <div id="settlement-buff" class="settlement-buff hidden"></div>
+      <div id="post-level2-row" class="settlement-actions hidden">
+        <button type="button" id="btn-restart-run" class="retry-btn">重新开始</button>
+        <button type="button" id="btn-next-level" class="retry-btn">进入下一关</button>
+      </div>
+      <button id="settlement-retry" class="retry-btn">RETRY</button>
+    </div>
+  </div>
+
+  <div id="playfield">
+    <aside id="touch-rail-p1" class="touch-rail touch-rail--left hidden" aria-label="P1 触控">
+      <button type="button" id="touch-dodge-p1" class="touch-btn touch-btn--square touch-btn--dodge">
+        <span class="touch-btn-main">闪</span>
+        <span class="touch-btn-sub">左 Shift</span>
+        <span class="touch-btn-cd" hidden></span>
+      </button>
+      <button type="button" id="touch-j-p1" class="touch-btn touch-btn--square touch-btn--attack">
+        <span class="touch-btn-main">J</span>
+        <span class="touch-btn-sub">攻击</span>
+      </button>
+      <button type="button" id="touch-l-p1" class="touch-btn touch-btn--square touch-btn--block">
+        <span class="touch-btn-main">L</span>
+        <span class="touch-btn-sub">格挡</span>
+      </button>
+      <button type="button" id="touch-k-p1" class="touch-btn touch-btn--square touch-btn--super">
+        <canvas class="touch-super-canvas" width="44" height="44" aria-hidden="true"></canvas>
+        <span class="touch-super-fallback">K</span>
+        <span class="touch-btn-sub">超级拳</span>
+        <span class="touch-btn-cd" hidden></span>
+      </button>
+    </aside>
+    <div id="game-column">
+      <div id="game-wrap">
+        <div id="hud">
+          <div class="bar-wrap player-bar">
+            <span>P1</span>
+            <div class="bar-bg"><div id="player-hp-bar" class="bar-fill"></div></div>
+          </div>
+          <div class="bar-wrap enemy-bar">
+            <span>P2</span>
+            <div class="bar-bg"><div id="enemy-hp-bar" class="bar-fill"></div></div>
+          </div>
+        </div>
+        <div class="canvas-stack">
+          <canvas id="canvas"></canvas>
+          <div id="god-touch-bar" class="god-touch-bar hidden" aria-hidden="true">
+            <button type="button" id="touch-god-p1" class="touch-btn touch-btn--godbar">
+              <span class="touch-god-label">神技</span>
+              <span class="touch-god-sub">G 键 · 点击</span>
+              <span class="touch-god-fly hidden"></span>
+            </button>
+            <button type="button" id="touch-god-p2" class="touch-btn touch-btn--godbar hidden">
+              <span class="touch-god-label">神技</span>
+              <span class="touch-god-sub">C 键 · 点击</span>
+              <span class="touch-god-fly hidden"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside id="touch-rail-p2" class="touch-rail touch-rail--right hidden" aria-label="P2 触控">
+      <button type="button" id="touch-dodge-p2" class="touch-btn touch-btn--square touch-btn--dodge">
+        <span class="touch-btn-main">闪</span>
+        <span class="touch-btn-sub">右 Shift</span>
+        <span class="touch-btn-cd" hidden></span>
+      </button>
+      <button type="button" id="touch-b-p2" class="touch-btn touch-btn--square touch-btn--attack">
+        <span class="touch-btn-main">B</span>
+        <span class="touch-btn-sub">攻击</span>
+      </button>
+      <button type="button" id="touch-m-p2" class="touch-btn touch-btn--square touch-btn--block">
+        <span class="touch-btn-main">M</span>
+        <span class="touch-btn-sub">格挡</span>
+      </button>
+      <button type="button" id="touch-n-p2" class="touch-btn touch-btn--square touch-btn--super">
+        <canvas class="touch-super-canvas" width="44" height="44" aria-hidden="true"></canvas>
+        <span class="touch-super-fallback">N</span>
+        <span class="touch-btn-sub">超级拳</span>
+        <span class="touch-btn-cd" hidden></span>
+      </button>
+    </aside>
+  </div>
+
+  <!--
+    Chrome 若仍显示旧逻辑：1) 按 Cmd+Shift+R 强制刷新  2) 或把下面 ?v= 的数字改大后保存再刷新
+    Cursor 内置预览常会绕过缓存或自动重载，所以和本机 Chrome 表现不一致是正常的。
+  -->
+  <script src="game.js?v=12"></script>
+</body>
+</html>

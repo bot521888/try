@@ -1,0 +1,465 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+  font-family: sans-serif;
+}
+
+#playfield {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 0 8px 12px;
+}
+
+#game-column {
+  flex: 0 0 auto;
+}
+
+.touch-rail {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 62px;
+  flex-shrink: 0;
+  padding-bottom: 2px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.touch-rail.hidden {
+  display: none;
+}
+
+.touch-btn {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 4px;
+  border: 2px solid rgba(148, 163, 184, 0.5);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #2d3748 0%, #11151f 100%);
+  color: #f8fafc;
+  cursor: pointer;
+  font-family: system-ui, "PingFang SC", "Heiti SC", sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.touch-btn:active:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.touch-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.touch-btn--god {
+  min-height: 72px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(36, 38, 48, 0.95) 0%, rgba(20, 22, 30, 0.98) 100%);
+}
+
+.touch-btn--god.touch-god--held {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+}
+
+.touch-btn--god.touch-god--tier-ronin.touch-god--held {
+  border-color: rgba(222, 184, 135, 0.95);
+  box-shadow: 0 0 16px rgba(200, 140, 90, 0.5);
+}
+
+.touch-btn--god.touch-god--tier-thor.touch-god--held {
+  border-color: rgba(252, 165, 165, 0.95);
+  box-shadow: 0 0 16px rgba(125, 211, 252, 0.45);
+}
+
+.touch-btn--god.touch-god--tier-berserker.touch-god--held {
+  border-color: rgba(254, 202, 202, 0.95);
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.45);
+}
+
+.touch-btn--god.touch-god--tier-angel.touch-god--held {
+  border-color: rgba(230, 190, 255, 0.92);
+  box-shadow: 0 0 14px rgba(253, 224, 138, 0.35);
+}
+
+.touch-btn--god.touch-god--tier-demon.touch-god--held {
+  border-color: rgba(251, 146, 120, 0.92);
+  box-shadow: 0 0 14px rgba(192, 132, 252, 0.35);
+}
+
+.touch-btn--god.touch-god--active-thor .touch-god-label {
+  text-shadow: 0 0 8px rgba(125, 211, 252, 0.8);
+}
+
+.touch-btn--god.touch-god--active-rage .touch-god-label {
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.75);
+}
+
+.touch-btn--godbar.touch-god--held {
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+}
+
+.touch-btn--godbar.touch-god--tier-ronin.touch-god--held {
+  border-color: rgba(222, 184, 135, 0.95);
+  box-shadow: 0 0 16px rgba(200, 140, 90, 0.5);
+}
+
+.touch-btn--godbar.touch-god--tier-thor.touch-god--held {
+  border-color: rgba(252, 165, 165, 0.95);
+  box-shadow: 0 0 16px rgba(125, 211, 252, 0.45);
+}
+
+.touch-btn--godbar.touch-god--tier-berserker.touch-god--held {
+  border-color: rgba(254, 202, 202, 0.95);
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.45);
+}
+
+.touch-btn--godbar.touch-god--tier-angel.touch-god--held {
+  border-color: rgba(230, 190, 255, 0.92);
+  box-shadow: 0 0 14px rgba(253, 224, 138, 0.35);
+}
+
+.touch-btn--godbar.touch-god--tier-demon.touch-god--held {
+  border-color: rgba(251, 146, 120, 0.92);
+  box-shadow: 0 0 14px rgba(192, 132, 252, 0.35);
+}
+
+.touch-btn--godbar.touch-god--active-thor .touch-god-label {
+  text-shadow: 0 0 8px rgba(125, 211, 252, 0.8);
+}
+
+.touch-btn--godbar.touch-god--active-rage .touch-god-label {
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.75);
+}
+
+.canvas-stack {
+  position: relative;
+  display: block;
+}
+
+.god-touch-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 10px 10px;
+  pointer-events: none;
+  z-index: 8;
+  box-sizing: border-box;
+}
+
+.god-touch-bar.hidden {
+  display: none;
+}
+
+.touch-btn--godbar {
+  pointer-events: auto;
+  width: min(248px, 46%);
+  min-width: 112px;
+  min-height: 48px;
+  max-height: 56px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(36, 38, 48, 0.97) 0%, rgba(20, 22, 30, 0.99) 100%);
+}
+
+.touch-btn--godbar.hidden {
+  display: none !important;
+}
+
+.touch-btn--godbar .touch-god-label {
+  font-size: 13px;
+}
+
+.touch-btn--godbar .touch-god-sub,
+.touch-btn--godbar .touch-god-fly {
+  font-size: 10px;
+}
+
+.touch-god-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100%;
+  word-break: break-all;
+  white-space: pre-line;
+}
+
+.touch-god-sub,
+.touch-btn-sub {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(186, 200, 220, 0.92);
+  text-align: center;
+  line-height: 1.15;
+}
+
+.touch-god-fly {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(237, 214, 255, 0.98);
+  margin-top: 2px;
+}
+
+.touch-god-fly.hidden {
+  display: none;
+}
+
+.touch-btn-main {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.touch-btn--dodge.touch-btn--ready {
+  border-color: rgba(56, 189, 248, 0.85);
+}
+
+.touch-btn--attack.touch-btn--ready {
+  border-color: rgba(129, 140, 248, 0.85);
+}
+
+.touch-btn--block.touch-btn--ready {
+  border-color: rgba(148, 163, 184, 0.75);
+}
+
+.touch-btn--super.touch-btn--ready {
+  border-color: rgba(251, 191, 36, 0.9);
+}
+
+.touch-btn-cd {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.52);
+  font-size: 17px;
+  font-weight: 700;
+  color: #f8fafc;
+  pointer-events: none;
+}
+
+.touch-btn-cd[hidden] {
+  display: none !important;
+}
+
+.touch-btn--super {
+  position: relative;
+  min-height: 58px;
+  padding-top: 8px;
+  padding-bottom: 6px;
+}
+
+.touch-super-canvas {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.touch-btn--super .touch-super-fallback {
+  font-size: 19px;
+  font-weight: 700;
+  margin-top: -6px;
+}
+
+.touch-btn--super .touch-btn-sub {
+  margin-top: auto;
+}
+
+.touch-btn--super.touch-super--has-sprite .touch-super-fallback {
+  opacity: 0;
+  font-size: 1px;
+}
+
+#game-wrap {
+  position: relative;
+  border: 2px solid #333;
+}
+
+#hud {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  z-index: 10;
+  pointer-events: none;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  min-width: 140px;
+}
+
+.bar-wrap span {
+  color: #fff;
+  font-size: 12px;
+  width: 32px;
+}
+
+.bar-bg {
+  flex: 1;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.15s ease-out;
+}
+
+.bar-wrap .bar-fill {
+  background: #c62828;
+}
+
+.bar-wrap.is-boss .bar-fill {
+  background: #f9a825;
+}
+
+#canvas {
+  display: block;
+  background: #16213e;
+}
+
+/* 结算层 */
+.settlement-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  font-family: system-ui, sans-serif;
+  animation: fadeIn 0.3s ease-out;
+}
+.settlement-overlay.hidden {
+  display: none;
+}
+
+.settlement-panel {
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 24px 36px;
+  min-width: 260px;
+  text-align: center;
+  animation: fadeIn 0.4s ease-out 0.1s both;
+}
+
+.settlement-title {
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.settlement-grade {
+  color: #fff;
+  font-size: 36px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  letter-spacing: 0.15em;
+}
+
+.settlement-stats {
+  margin-bottom: 20px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.settlement-buff {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+.settlement-buff.hidden {
+  display: none;
+}
+
+.settlement-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.settlement-actions.hidden {
+  display: none;
+}
+
+.retry-btn {
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.retry-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
