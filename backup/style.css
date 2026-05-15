@@ -1,0 +1,155 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+  font-family: sans-serif;
+}
+
+#game-wrap {
+  position: relative;
+  border: 2px solid #333;
+}
+
+#hud {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  z-index: 10;
+  pointer-events: none;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  min-width: 140px;
+}
+
+.bar-wrap span {
+  color: #fff;
+  font-size: 12px;
+  width: 32px;
+}
+
+.bar-bg {
+  flex: 1;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.15s ease-out;
+}
+
+.bar-wrap .bar-fill {
+  background: #c62828;
+}
+
+.bar-wrap.is-boss .bar-fill {
+  background: #f9a825;
+}
+
+#canvas {
+  display: block;
+  background: #16213e;
+}
+
+/* 结算 */
+.settlement-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  font-family: system-ui, sans-serif;
+  animation: fadeIn 0.3s ease-out;
+}
+.settlement-overlay.hidden { display: none; }
+
+.settlement-panel {
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 24px 36px;
+  min-width: 260px;
+  text-align: center;
+  animation: fadeIn 0.4s ease-out 0.1s both;
+}
+
+.settlement-title {
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.settlement-grade {
+  color: #fff;
+  font-size: 36px;
+  font-weight: bold;
+  margin-bottom: 20px;
+  letter-spacing: 0.15em;
+}
+
+.settlement-stats {
+  margin-bottom: 20px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.settlement-buff {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+.settlement-buff.hidden { display: none; }
+
+.retry-btn {
+  width: 100%;
+  padding: 12px 20px;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.retry-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
