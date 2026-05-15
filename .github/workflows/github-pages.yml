@@ -22,7 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 首次部署若未在 Settings→Pages 里开过站点，会报 Get Pages site failed；由工作流自动开启
       - uses: actions/configure-pages@v5
+        with:
+          enablement: auto
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
