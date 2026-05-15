@@ -6631,7 +6631,7 @@ let deathSpriteP2 = null;
           this.labelTimer = this.labelDuration;
           return;
         }
-        // 无尽：一轮（原第三关全部波次之后）结束 → 敌人更难，立刻进入下一轮
+        // 无尽：每通一轮（原第三关全部波次之后）→ 敌人更难 + 与旧版相同的神阶结算升级；点 RETRY 后再开下一轮
         bumpEnemyClearRankAfterFinale();
         projectiles.length = 0;
         angelMinionBolts.length = 0;
@@ -6647,11 +6647,23 @@ let deathSpriteP2 = null;
           player2.vx = 0;
           player2.vy = 0;
         }
-        this.index = -1;
-        this.state = 'running';
-        this.labelText = tr('endless_cycle');
-        this.labelTimer = this.labelDuration;
-        this.gotoNextStage();
+        this.state = 'finished';
+        this.labelText = '';
+        this.labelTimer = 0;
+        settlementShown = true;
+        if (roninMode) {
+          showLevel3ClearAlreadyMaxSettlement();
+        } else if (thorMode) {
+          showRoninFinaleSettlement();
+        } else if (demonMode) {
+          showThorFinaleSettlement();
+        } else if (angelMode) {
+          showDemonFinaleSettlement();
+        } else if (berserkerMode) {
+          showAngelFinaleSettlement();
+        } else {
+          showBerserkerFinaleSettlement();
+        }
         return;
       }
 
