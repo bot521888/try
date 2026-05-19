@@ -3066,6 +3066,7 @@ let deathSpriteP2 = null;
     dodgeTrailTimer: 0,
     dodgeTriggerCount: 0, // 仅在显式按下 Shift / HUD 闪按钮时触发一次，避免“排队后自动闪”
     dodgeHoldRepeat: 0,
+    knockbackEnd: 0,
     isBlocking: false,
     blockFlashTimer: 0,
     blockFlashColor: '#ffffff',
@@ -3138,6 +3139,7 @@ let deathSpriteP2 = null;
     dodgeDir: 1,
     dodgeTrailTimer: 0,
     dodgeTriggerCount: 0,
+    knockbackEnd: 0,
     attackStart: 0,
     attackDurationSec: config.attackDuration / 1000,
     attackCooldownEnd: 0,
@@ -3985,6 +3987,45 @@ let deathSpriteP2 = null;
     }
   }
 
+  /** 玩家受击击退（与怪物 knockbackEnd 阶段一致；Versus / 友军伤害共用） */
+  function applyPlayerKnockback(victim, attacker, kbX, kbY, t, fullPower) {
+    const knockDir =
+      Math.sign(
+        victim.x +
+          config.playerWidth / 2 -
+          (attacker.x + config.playerWidth / 2)
+      ) ||
+      attacker.facing ||
+      1;
+    const pkx = fullPower ? kbX : Math.min(320, kbX * 0.45);
+    const pky = fullPower ? kbY : Math.min(-90, kbY * 0.35);
+    victim.vx = Math.max(
+      -config.maxKnockbackVx,
+      Math.min(config.maxKnockbackVx, knockDir * pkx)
+    );
+    victim.vy = pky;
+    victim.knockbackEnd = t + (config.hitstun || 0.12);
+  }
+
+  /** 击退窗口内：重力 + 位移 + 地面摩擦（避免 update 开头 vx=0 抹掉击退） */
+  function tickPlayerKnockback(pl, dt, t) {
+    if (!(pl.knockbackEnd > 0 && t < pl.knockbackEnd)) return false;
+    pl.vy += config.gravity * dt;
+    pl.x += pl.vx * dt;
+    pl.y += pl.vy * dt;
+    const groundY = config.groundY - config.playerHeight;
+    if (pl.y >= groundY) {
+      pl.y = groundY;
+      pl.vy = 0;
+      pl.onGround = true;
+    } else {
+      pl.onGround = false;
+    }
+    pl.vx *= 0.92;
+    pl.x = Math.max(0, Math.min(config.width - config.playerWidth, pl.x));
+    return true;
+  }
+
   /**
    * 友军近战伤害：普通格挡 Versus 下防守方扣血；完美弹反攻击方按上限比例扣血、防守方不掉血；点按 0.04s 内为完美格挡。
    * @returns {'hit'|'blocked'|'parry'|'dodge'|'immune'}
@@ -4034,9 +4075,10 @@ let deathSpriteP2 = null;
           const rky = Math.min(-110, kbY * 0.42);
           attacker.vx = Math.max(
             -config.maxKnockbackVx,
-            Math.min(config.maxKnockbackVx, attacker.vx + rdx * rkx)
+            Math.min(config.maxKnockbackVx, rdx * rkx)
           );
           attacker.vy = rky;
+          attacker.knockbackEnd = t + (config.hitstun || 0.12);
           const acx = attacker.x + config.playerWidth / 2;
           const acy = attacker.y + config.playerHeight / 2;
           hitFlashEffects.push({ x: acx, y: acy, startTime: t, duration: 0.08 });
@@ -4066,19 +4108,7 @@ let deathSpriteP2 = null;
     if (dmg <= 0) return 'blocked';
     victim.hp = Math.max(0, victim.hp - dmg);
     recordCoopFriendlyVictimHit(victim);
-    const dir = attacker.facing || 1;
-    if (isVersusMode) {
-      victim.vx = Math.max(
-        -config.maxKnockbackVx,
-        Math.min(config.maxKnockbackVx, victim.vx + dir * kbX)
-      );
-      victim.vy = kbY;
-    } else {
-      const pkx = Math.min(320, kbX * 0.45);
-      const pky = Math.min(-90, kbY * 0.35);
-      victim.vx = Math.max(-config.maxKnockbackVx, Math.min(config.maxKnockbackVx, victim.vx + dir * pkx));
-      victim.vy = pky;
-    }
+    applyPlayerKnockback(victim, attacker, kbX, kbY, t, isVersusMode);
     const cx = victim.x + config.playerWidth / 2;
     const cy = victim.y + config.playerHeight / 2;
     hitFlashEffects.push({ x: cx, y: cy, startTime: t, duration: 0.08 });
@@ -4656,6 +4686,8 @@ let deathSpriteP2 = null;
       player.vy = 0;
       return;
     }
+    if (tickPlayerKnockback(player, dt, t)) return;
+
     player.vx = 0;
     if (player.dodgeCooldown > 0) player.dodgeCooldown = Math.max(0, player.dodgeCooldown - dt);
     if (player.blockFlashTimer > 0) player.blockFlashTimer = Math.max(0, player.blockFlashTimer - dt);
@@ -5072,6 +5104,7 @@ let deathSpriteP2 = null;
         else playComboHitSound(attackStep || 1);
         if (isVersusMode && !player2.isSuperAttacking && attackStep === 3) {
           player.vy -= 150;
+          player.knockbackEnd = Math.max(player.knockbackEnd || 0, t + (config.hitstun || 0.12));
           comboFlashRemain = Math.max(comboFlashRemain, 0.05);
         }
         anyHit = true;
@@ -5131,6 +5164,8 @@ let deathSpriteP2 = null;
       player2.vy = 0;
       return;
     }
+    if (tickPlayerKnockback(player2, dt, t)) return;
+
     player2.state = 'alive';
     player2.anim = 'idle';
     if (player2.blockFlashTimer > 0) player2.blockFlashTimer = Math.max(0, player2.blockFlashTimer - dt);
@@ -6469,6 +6504,7 @@ let deathSpriteP2 = null;
         }
         if (isVersusMode && !player.isSuperAttacking && attackStep === 3) {
           player2.vy -= 150;
+          player2.knockbackEnd = Math.max(player2.knockbackEnd || 0, t + (config.hitstun || 0.12));
           comboFlashRemain = Math.max(comboFlashRemain, 0.05);
         }
         anyHit = true;
@@ -7165,6 +7201,7 @@ let deathSpriteP2 = null;
     player.dodgeTimer = 0;
     player.dodgeCooldown = 0;
     player.isBlocking = false;
+    player.knockbackEnd = 0;
     player.combo = 0;
     player.comboStep = 0;
     player.comboTimer = 0;
@@ -7195,6 +7232,7 @@ let deathSpriteP2 = null;
     player2.dodgeTimer = 0;
     player2.dodgeCooldown = 0;
     player2.isBlocking = false;
+    player2.knockbackEnd = 0;
     player2.combo = 0;
     player2.comboStep = 0;
     player2.comboTimer = 0;
@@ -7354,6 +7392,7 @@ let deathSpriteP2 = null;
     player.dodgeTriggerCount = 0;
     player.dodgeHoldRepeat = 0;
     player.dodgeDir = player.facing || 1;
+    player.knockbackEnd = 0;
     player.isBlocking = false;
     player.blockFlashTimer = 0;
     player.blockShakeTimer = 0;
@@ -7375,6 +7414,7 @@ let deathSpriteP2 = null;
     player2.state = 'alive';
     player2.onGround = true;
     player2.isBlocking = false;
+    player2.knockbackEnd = 0;
     player2.blockFlashTimer = 0;
     player2.blockShakeTimer = 0;
     player2.shieldGoldTimer = 0;
