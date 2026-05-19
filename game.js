@@ -3155,6 +3155,8 @@ let deathSpriteP2 = null;
     comboTimer: 0,
     comboWindowMax: 0.6,
     comboActiveStep: 0,
+    comboUiStep: 0,
+    comboUiTimer: 0,
     comboNextDeadline: 0,
     blockHeldLast: false,
     bHeldLast: false,
@@ -3788,6 +3790,17 @@ let deathSpriteP2 = null;
     );
   }
 
+  /** 双人友伤/对战：按住格挡键即算格挡（避免攻击后摇把 isBlocking 清掉仍吃满伤） */
+  function coopMeleeBlockActive(victim, t) {
+    if (victim === player) {
+      return !!keys['KeyL'] || blockInputActive(player, t);
+    }
+    if (victim === player2) {
+      return !!keys['KeyM'] || blockInputActive(player2, t);
+    }
+    return blockInputActive(victim, t);
+  }
+
   function isPerfectParry(pl, t) {
     return t - (pl.blockLastPressTime ?? -1e9) <= PARRY_REFLEX_SEC;
   }
@@ -3988,7 +4001,7 @@ let deathSpriteP2 = null;
     if (movingGroundImmune) return 'immune';
 
     let dmg = rawDmg;
-    if (blockInputActive(victim, t)) {
+    if (coopMeleeBlockActive(victim, t)) {
       const shieldCx = victim.facing === 1 ? victim.x + config.playerWidth + 5 : victim.x - 5;
       const shieldCy = victim.y + config.playerHeight / 2;
       const perfect = isPerfectParry(victim, t);
@@ -4047,11 +4060,6 @@ let deathSpriteP2 = null;
       victim.blockFlashTimer = 0.08;
       victim.blockFlashColor = '#e2e8f0';
       victim.blockShakeTimer = 0.1;
-      if (isVersusMode) {
-        const ratio = config.versusBlockHpLossRatio ?? 0.25;
-        const loss = Math.max(1, Math.round(victim.maxHp * ratio));
-        victim.hp = Math.max(0, victim.hp - loss);
-      }
       return 'blocked';
     }
 
@@ -4839,7 +4847,7 @@ let deathSpriteP2 = null;
 
       // 拳风特效（在判定框位置）
       spawnPunchWind(step);
-      spawnComboName(step);
+      spawnComboName(step, player);
       spawnBerserkerPunchRedParticles(step);
       spawnRoninSwordQiOnNormalAttack();
 
@@ -5073,9 +5081,22 @@ let deathSpriteP2 = null;
     }
 
     if (anyHit) {
+      const hitStep = player2.isSuperAttacking
+        ? 0
+        : player2.comboActiveStep || player2.comboStep || 1;
       doHitstop();
-      if (player2.isSuperAttacking) playHitSound();
-      else playComboHitSound(attackStep || 1);
+      if (player2.isSuperAttacking) {
+        playHitSound();
+      } else {
+        if (hitStep === 2) screenShake(40);
+        if (hitStep === 3) {
+          screenShake(80);
+          hitstopRemain = Math.max(hitstopRemain, 0.12);
+        }
+        playComboHitSound(hitStep);
+        player2.comboUiStep = hitStep;
+        player2.comboUiTimer = 0.18;
+      }
     } else if (player2.attackStart > 0) {
       player2.combo = 0;
     }
@@ -5259,7 +5280,7 @@ let deathSpriteP2 = null;
       player2.attackCooldownEnd = t + combo.cooldown * getPlayerAttackCooldownScale();
       vx += (player2.facing || 1) * combo.dashForce;
       spawnPunchWind(step, player2);
-      spawnComboName(step);
+      spawnComboName(step, player2);
       spawnBerserkerPunchRedParticles(step, player2);
       spawnRoninSwordQiOnNormalAttack(player2);
       if (punchSpriteP2) punchSpriteP2.playOnce();
@@ -6224,7 +6245,7 @@ let deathSpriteP2 = null;
   }
 
   // ========== 招式名称浮动 ==========
-  function spawnComboName(step) {
+  function spawnComboName(step, actor = player) {
     const names = [
       { text: '轻拳 JAB', color: '#ffffff', size: 20 },
       { text: '重拳 CROSS', color: '#60a5fa', size: 26 },
@@ -6237,8 +6258,8 @@ let deathSpriteP2 = null;
       text: info.text,
       color: info.color,
       size: info.size,
-      x: player.x + config.playerWidth / 2,
-      y: player.y - 20,
+      x: actor.x + config.playerWidth / 2,
+      y: actor.y - 20,
       life: 0.8,
       maxLife: 0.8,
       vy: -40,
@@ -7382,6 +7403,8 @@ let deathSpriteP2 = null;
     player2.comboStep = 0;
     player2.comboTimer = 0;
     player2.comboActiveStep = 0;
+    player2.comboUiStep = 0;
+    player2.comboUiTimer = 0;
     player2.comboNextDeadline = 0;
     player2.bHeldLast = false;
     shieldParticlesP2.length = 0;
@@ -7673,6 +7696,13 @@ let deathSpriteP2 = null;
       if (player.comboUiTimer <= 0) {
         player.comboUiTimer = 0;
         player.comboUiStep = 0;
+      }
+    }
+    if (isCoopMode && player2.comboUiTimer > 0) {
+      player2.comboUiTimer -= dt;
+      if (player2.comboUiTimer <= 0) {
+        player2.comboUiTimer = 0;
+        player2.comboUiStep = 0;
       }
     }
 
@@ -9072,14 +9102,14 @@ let deathSpriteP2 = null;
       ctx.strokeRect(hb2.left, hb2.top, hb2.right - hb2.left, hb2.bottom - hb2.top);
     }
 
-    // 连招命中UI（头顶 1/2/3!）
-    if (player.comboUiTimer > 0 && player.comboUiStep > 0) {
-      const step = player.comboUiStep;
+    function drawComboHitUiForActor(actor) {
+      if (!actor || actor.comboUiTimer <= 0 || actor.comboUiStep <= 0) return;
+      const step = actor.comboUiStep;
       const maxT = 0.18;
-      const a = Math.max(0, Math.min(1, player.comboUiTimer / maxT));
+      const a = Math.max(0, Math.min(1, actor.comboUiTimer / maxT));
       const bob = Math.sin(t * 18) * 2.0;
-      const x = player.x + config.playerWidth / 2;
-      const y = player.y - 10 + bob;
+      const x = actor.x + config.playerWidth / 2;
+      const y = actor.y - 10 + bob;
 
       ctx.save();
       ctx.globalAlpha = a;
@@ -9104,6 +9134,9 @@ let deathSpriteP2 = null;
       }
       ctx.restore();
     }
+
+    drawComboHitUiForActor(player);
+    if (isCoopMode) drawComboHitUiForActor(player2);
 
     // 连招拳风特效
     for (const w of punchWindEffects) {
