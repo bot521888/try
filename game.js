@@ -3987,6 +3987,9 @@ let deathSpriteP2 = null;
     }
   }
 
+  /** Versus 1v1 击退相对基础值的倍率 */
+  const VERSUS_KNOCKBACK_MUL = 2;
+
   /** 玩家受击击退（与怪物 knockbackEnd 阶段一致；Versus / 友军伤害共用） */
   function applyPlayerKnockback(victim, attacker, kbX, kbY, t, fullPower) {
     const knockDir =
@@ -3997,8 +4000,9 @@ let deathSpriteP2 = null;
       ) ||
       attacker.facing ||
       1;
-    const pkx = fullPower ? kbX : Math.min(320, kbX * 0.45);
-    const pky = fullPower ? kbY : Math.min(-90, kbY * 0.35);
+    const vsMul = fullPower ? VERSUS_KNOCKBACK_MUL : 1;
+    const pkx = fullPower ? kbX * vsMul : Math.min(320, kbX * 0.45);
+    const pky = fullPower ? kbY * vsMul : Math.min(-90, kbY * 0.35);
     victim.vx = Math.max(
       -config.maxKnockbackVx,
       Math.min(config.maxKnockbackVx, knockDir * pkx)
@@ -4071,8 +4075,9 @@ let deathSpriteP2 = null;
               (victim.x + config.playerWidth / 2) -
                 (attacker.x + config.playerWidth / 2)
             ) || 1;
-          const rkx = Math.min(config.maxKnockbackVx, kbX * 0.62);
-          const rky = Math.min(-110, kbY * 0.42);
+          const parryKbMul = isVersusMode ? VERSUS_KNOCKBACK_MUL : 1;
+          const rkx = Math.min(config.maxKnockbackVx, kbX * 0.62 * parryKbMul);
+          const rky = Math.min(-110, kbY * 0.42 * parryKbMul);
           attacker.vx = Math.max(
             -config.maxKnockbackVx,
             Math.min(config.maxKnockbackVx, rdx * rkx)
@@ -5103,7 +5108,7 @@ let deathSpriteP2 = null;
         if (player2.isSuperAttacking) playHitSound();
         else playComboHitSound(attackStep || 1);
         if (isVersusMode && !player2.isSuperAttacking && attackStep === 3) {
-          player.vy -= 150;
+          player.vy -= 150 * VERSUS_KNOCKBACK_MUL;
           player.knockbackEnd = Math.max(player.knockbackEnd || 0, t + (config.hitstun || 0.12));
           comboFlashRemain = Math.max(comboFlashRemain, 0.05);
         }
@@ -6503,7 +6508,7 @@ let deathSpriteP2 = null;
           playComboHitSound(attackStep || 1);
         }
         if (isVersusMode && !player.isSuperAttacking && attackStep === 3) {
-          player2.vy -= 150;
+          player2.vy -= 150 * VERSUS_KNOCKBACK_MUL;
           player2.knockbackEnd = Math.max(player2.knockbackEnd || 0, t + (config.hitstun || 0.12));
           comboFlashRemain = Math.max(comboFlashRemain, 0.05);
         }
