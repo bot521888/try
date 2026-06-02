@@ -1267,24 +1267,27 @@ let deathSpriteP2 = null;
     } catch (_) {}
   }
   let enemyClearRank = loadEnemyClearRank();
-  /** 无尽：每通一轮（原第三关整段）+1，全体怪/Boss 再 ×2（与 rank 叠乘）；新开局清零 */
+  /** 无尽：每通一轮 +1 stack；相对上一轮约 +12.5%（1.125^stack），不再翻倍 */
   let endlessCombatStack = 0;
+  /** 每通一轮相对上一轮的血/伤/速增幅（约 12.5%） */
+  const ENDLESS_CYCLE_STAT_MUL = 1.125;
   function bumpEnemyClearRankAfterFinale() {
     enemyClearRank = Math.min(80, enemyClearRank + 1);
     saveEnemyClearRank(enemyClearRank);
   }
-  /** 周目倍率：rank 线性叠乘 + 上限；无尽每通一轮再叠一层 ×2（血/伤），速度略涨 */
+  /** 周目倍率：rank 线性成长（系数为旧版一半）；无尽 stack 为 1.125^stack */
   function getEnemyDifficultyMultipliers() {
     const r = Math.min(30, Math.max(0, enemyClearRank));
-    const baseHp = Math.min(3.6, 1 + r * 0.17);
-    const baseDmg = Math.min(3.3, 1 + r * 0.15);
-    const baseSpd = Math.min(1.38, 1 + r * 0.055);
-    const stack = Math.min(10, Math.max(0, endlessCombatStack));
-    const cycleMul = Math.pow(2, stack);
+    const baseHp = Math.min(3.6, 1 + r * 0.085);
+    const baseDmg = Math.min(3.3, 1 + r * 0.075);
+    const baseSpd = Math.min(1.38, 1 + r * 0.0275);
+    const stack = Math.min(24, Math.max(0, endlessCombatStack));
+    const cycleMul = Math.pow(ENDLESS_CYCLE_STAT_MUL, stack);
+    const cycleSpdMul = Math.pow(1.0625, stack);
     return {
       hp: baseHp * cycleMul,
       dmg: baseDmg * cycleMul,
-      spd: Math.min(2.0, baseSpd * (1 + stack * 0.07)),
+      spd: Math.min(1.65, baseSpd * cycleSpdMul),
     };
   }
 
