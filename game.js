@@ -1666,6 +1666,48 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.13;
   const GUNNER_SHOOT_INTERVAL_RAGE = 0.07;
   const GUNNER_BULLET_SPEED = 920;
+  const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
+  /** 爆头音效播放期间禁止再次开火（全局，音效不可打断） */
+  let gunnerHeadshotLockUntil = 0;
+  const GunnerHeadshotSfx = {
+    el: null,
+    durationSec: 0.45,
+    loadStarted: false,
+    ensureLoad() {
+      if (this.loadStarted) return;
+      this.loadStarted = true;
+      const a = new Audio(GUNNER_HEADSHOT_MP3_URL);
+      a.preload = 'auto';
+      const adopt = () => {
+        if (a.duration && isFinite(a.duration) && a.duration > 0) {
+          this.durationSec = a.duration;
+        }
+        this.el = a;
+      };
+      a.addEventListener('loadedmetadata', adopt, { once: true });
+      a.addEventListener('canplaythrough', adopt, { once: true });
+    },
+    /** 已在播放时不重播、不截断；返回本次应锁定的秒数 */
+    playAndLock(t) {
+      this.ensureLoad();
+      if (t < gunnerHeadshotLockUntil) {
+        return gunnerHeadshotLockUntil - t;
+      }
+      const dur = this.durationSec;
+      gunnerHeadshotLockUntil = t + dur;
+      const el = this.el;
+      if (el) {
+        try {
+          el.currentTime = 0;
+          void el.play();
+        } catch (_) { /* ignore */ }
+      }
+      return dur;
+    },
+    isLocked(t) {
+      return t < gunnerHeadshotLockUntil;
+    },
+  };
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
   let godSkillKeyHeld = false;
   /** 双人 P2：C 键按住（外部神技条按下态） */
@@ -1761,6 +1803,7 @@ let deathSpriteP2 = null;
       vx: dir * GUNNER_BULLET_SPEED,
       facing: dir,
       life: 2.4,
+      owner: actor,
     });
     actor.gunnerShootOnlyAnim = true;
     actor.attackStart = t;
@@ -1773,6 +1816,7 @@ let deathSpriteP2 = null;
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
     const tick = (actor, held) => {
       if (!held || !actor || actor.state !== 'alive') return;
+      if (GunnerHeadshotSfx.isLocked(t)) return;
       actor.gunnerShootCd = (actor.gunnerShootCd || 0) - dt;
       if (actor.gunnerShootCd > 0) return;
       fireGunnerBullet(actor, t);
@@ -2736,6 +2780,7 @@ let deathSpriteP2 = null;
     return BGM.ctx;
   }
   function startAmbientLoop() {
+    GunnerHeadshotSfx.ensureLoad();
     BGM.start();
     ambientStarted = true;
   }
@@ -6278,6 +6323,11 @@ let deathSpriteP2 = null;
         const hpBeforeBullet = enemy.hp;
         const bulletDmg = getGunnerBulletDamageForEnemy(enemy, hitZone || 'body');
         enemy.hp = Math.max(0, enemy.hp - bulletDmg);
+        if (hitZone === 'head') {
+          const lockSec = GunnerHeadshotSfx.playAndLock(t);
+          const owner = b.owner || player;
+          owner.gunnerShootCd = Math.max(owner.gunnerShootCd || 0, lockSec);
+        }
         if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
         }
@@ -7620,6 +7670,7 @@ let deathSpriteP2 = null;
     gunnerShootPointersP1.clear();
     gunnerShootPointersP2.clear();
     gunnerShootPointerSide.clear();
+    gunnerHeadshotLockUntil = 0;
     godSkillKeyHeld = false;
     godSkillKeyHeldP2 = false;
     godSkillPressingPointers.clear();
