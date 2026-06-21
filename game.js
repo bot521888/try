@@ -1842,7 +1842,7 @@ let deathSpriteP2 = null;
       this.py = this.y;
       this.vx *= Math.pow(this.drag, f);
       this.vy *= Math.pow(this.drag, f);
-      this.vy += this.gravity * f;
+      if (this.gravity) this.vy += this.gravity * f;
       this.x += this.vx * f;
       this.y += this.vy * f;
       this.life -= this.decay * f;
@@ -1866,14 +1866,16 @@ let deathSpriteP2 = null;
       const count = opt.count ?? 30;
       const speed = opt.speed ?? 5;
       const spread = ((opt.spread ?? 360) * Math.PI) / 180;
-      const gravity = opt.gravity ?? 3.5;
+      const gravity = opt.gravity ?? 0;
       const palette = HEADSHOT_BURST_PALETTES[opt.style] || HEADSHOT_BURST_PALETTES.gold;
       const baseAng = opt.dir ?? -Math.PI / 2;
       this.sparks = [];
       for (let i = 0; i < count; i++) {
         const a = baseAng + (Math.random() - 0.5) * spread;
-        const sp = speed * (0.45 + Math.random() * 0.65);
-        this.sparks.push(new HeadshotBurstSpark(x, y, a, sp, palette, gravity));
+        const sp = speed * (0.55 + Math.random() * 0.55);
+        const spark = new HeadshotBurstSpark(x, y, a, sp, palette, gravity);
+        if (spark.vy > -0.35) spark.vy = -0.35 - Math.random() * 1.4;
+        this.sparks.push(spark);
       }
       this.flash = { x, y, r: 2, life: 1, color: palette[0] };
     }
@@ -1922,9 +1924,9 @@ let deathSpriteP2 = null;
         dir: -Math.PI / 2,
         style: 'gold',
         count: 30,
-        speed: 5,
-        spread: 150,
-        gravity: 3.5,
+        speed: 6,
+        spread: 120,
+        gravity: 0,
       })
     );
   }
@@ -1949,6 +1951,7 @@ let deathSpriteP2 = null;
       this.loadStarted = true;
       const a = new Audio(GUNNER_HEADSHOT_MP3_URL);
       a.preload = 'auto';
+      a.volume = 0.67;
       const adopt = () => {
         if (a.duration && isFinite(a.duration) && a.duration > 0) {
           this.durationSec = a.duration;
@@ -1971,29 +1974,60 @@ let deathSpriteP2 = null;
     },
   };
   const GunnerShootSfx = {
-    el: null,
-    loadStarted: false,
+    buffer: null,
+    gain: null,
+    loadPromise: null,
+    pool: [],
+    poolIdx: 0,
+    volume: 0.55,
     ensureLoad() {
-      if (this.loadStarted) return;
-      this.loadStarted = true;
-      const a = new Audio(GUNNER_SHOOT_MP3_URL);
-      a.preload = 'auto';
-      a.volume = 0.55;
-      const adopt = () => {
-        this.el = a;
-      };
-      a.addEventListener('loadedmetadata', adopt, { once: true });
-      a.addEventListener('canplaythrough', adopt, { once: true });
+      if (!this.pool.length) {
+        for (let i = 0; i < 6; i++) {
+          const a = new Audio(GUNNER_SHOOT_MP3_URL);
+          a.preload = 'auto';
+          a.volume = this.volume;
+          void a.load();
+          this.pool.push(a);
+        }
+      }
+      if (this.loadPromise) return this.loadPromise;
+      this.loadPromise = (async () => {
+        try {
+          const ctx = ensureAudio();
+          if (ctx.state === 'suspended') await ctx.resume();
+          const res = await fetch(GUNNER_SHOOT_MP3_URL);
+          if (!res.ok) return;
+          const raw = await res.arrayBuffer();
+          this.buffer = await ctx.decodeAudioData(raw);
+          if (!this.gain) {
+            this.gain = ctx.createGain();
+            this.gain.gain.value = this.volume;
+            this.gain.connect(ctx.destination);
+          }
+        } catch (_) { /* ignore */ }
+      })();
+      return this.loadPromise;
     },
-    /** 连射叠播：每次开枪独立实例，不截断上一发 */
+    /** 开枪即播：Web Audio 零延迟；解码完成前用预载 Audio 池 */
     play() {
-      this.ensureLoad();
-      const el = this.el;
-      if (!el) return;
+      void this.ensureLoad();
       try {
-        const shot = el.cloneNode();
-        shot.volume = el.volume;
-        void shot.play();
+        const ctx = ensureAudio();
+        if (ctx.state === 'suspended') void ctx.resume();
+        if (this.buffer) {
+          const source = ctx.createBufferSource();
+          source.buffer = this.buffer;
+          source.connect(this.gain || ctx.destination);
+          source.start(0);
+          return;
+        }
+      } catch (_) { /* fall through */ }
+      if (!this.pool.length) return;
+      const a = this.pool[this.poolIdx++ % this.pool.length];
+      try {
+        a.pause();
+        a.currentTime = 0;
+        void a.play();
       } catch (_) { /* ignore */ }
     },
   };
@@ -2118,6 +2152,7 @@ let deathSpriteP2 = null;
 
   function updateGunnerAimFromPointer(gameX, gameY) {
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
+    GunnerShootSfx.ensureLoad();
     if (isGunnerHudPointer(gameX, gameY)) return;
     const actor = pickGunnerActorFromScreenX(gameX);
     if (!actor) return;
@@ -2130,8 +2165,9 @@ let deathSpriteP2 = null;
     const actor = pickGunnerActorFromScreenX(gameX);
     if (!actor) return false;
     e.preventDefault();
-    setGunnerAimFromScreen(actor, gameX, gameY);
     if ((actor.gunnerShootCd || 0) > 0) return true;
+    GunnerShootSfx.play();
+    setGunnerAimFromScreen(actor, gameX, gameY);
     fireGunnerBullet(actor, t);
     actor.gunnerShootCd = GUNNER_SHOOT_INTERVAL;
     return true;
@@ -2170,7 +2206,6 @@ let deathSpriteP2 = null;
     actor.attackDurationSec = 0.11;
     if (actor === player && punchSprite) punchSprite.playOnce();
     else if (actor === player2 && punchSpriteP2) punchSpriteP2.playOnce();
-    GunnerShootSfx.play();
   }
 
   function updateGunnerShooting(dt, t) {
@@ -3927,6 +3962,7 @@ let deathSpriteP2 = null;
       thorMode = true;
       roninMode = true;
       gunnerMode = true;
+      GunnerShootSfx.ensureLoad();
       if (!already) syncPlayerHpCapAndFill();
       return;
     }
