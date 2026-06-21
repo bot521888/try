@@ -1662,6 +1662,7 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
+  const GUNNER_SHOOT_MP3_URL = 'vystrel-vystrel-ak47.mp3';
 
   /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
   const TRACER_SPARK_PALETTE = ['#fffdf0', '#ffe27a', '#ffb028', '#ff7a1a', '#8a2010'];
@@ -1829,10 +1830,10 @@ let deathSpriteP2 = null;
       this.vx = Math.cos(angle) * speed;
       this.vy = Math.sin(angle) * speed;
       this.gravity = gravity;
-      this.drag = 0.86 + Math.random() * 0.06;
+      this.drag = 0.82 + Math.random() * 0.08;
       this.life = 1;
-      this.decay = 0.018 + Math.random() * 0.03;
-      this.size = 0.8 + Math.random() * 1.6;
+      this.decay = 0.038 + Math.random() * 0.055;
+      this.size = 0.6 + Math.random() * 1.1;
       this.color = palette[(Math.random() * palette.length) | 0];
     }
     update(dt) {
@@ -1848,12 +1849,13 @@ let deathSpriteP2 = null;
     }
     draw(ctx) {
       if (this.life <= 0) return;
+      const seg = Math.min(1, this.life * 1.35);
       ctx.globalAlpha = Math.max(0, this.life);
       ctx.strokeStyle = this.color;
-      ctx.lineWidth = this.size * this.life;
+      ctx.lineWidth = this.size * seg;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(this.px, this.py);
+      ctx.moveTo(this.x - (this.x - this.px) * seg, this.y - (this.y - this.py) * seg);
       ctx.lineTo(this.x, this.y);
       ctx.stroke();
     }
@@ -1861,16 +1863,16 @@ let deathSpriteP2 = null;
 
   class HeadshotBurst {
     constructor(x, y, opt = {}) {
-      const count = opt.count ?? 34;
-      const speed = opt.speed ?? 8;
+      const count = opt.count ?? 30;
+      const speed = opt.speed ?? 5;
       const spread = ((opt.spread ?? 360) * Math.PI) / 180;
-      const gravity = opt.gravity ?? 14;
+      const gravity = opt.gravity ?? 3.5;
       const palette = HEADSHOT_BURST_PALETTES[opt.style] || HEADSHOT_BURST_PALETTES.gold;
       const baseAng = opt.dir ?? -Math.PI / 2;
       this.sparks = [];
       for (let i = 0; i < count; i++) {
         const a = baseAng + (Math.random() - 0.5) * spread;
-        const sp = speed * (0.35 + Math.random() * 0.9);
+        const sp = speed * (0.45 + Math.random() * 0.65);
         this.sparks.push(new HeadshotBurstSpark(x, y, a, sp, palette, gravity));
       }
       this.flash = { x, y, r: 2, life: 1, color: palette[0] };
@@ -1878,8 +1880,8 @@ let deathSpriteP2 = null;
     update(dt) {
       const f = dt * 60;
       if (this.flash.life > 0) {
-        this.flash.r += 4 * f;
-        this.flash.life -= 0.08 * f;
+        this.flash.r += 2.2 * f;
+        this.flash.life -= 0.14 * f;
       }
       for (const s of this.sparks) s.update(dt);
       this.sparks = this.sparks.filter((s) => s.life > 0);
@@ -1915,20 +1917,14 @@ let deathSpriteP2 = null;
   }
 
   function spawnHeadshotBurst(x, y, bulletVx, bulletVy) {
-    let dir = -Math.PI / 2;
-    const vx = bulletVx || 0;
-    const vy = bulletVy || 0;
-    if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01) {
-      dir = Math.atan2(-vy, -vx);
-    }
     headshotBurstEffects.push(
       new HeadshotBurst(x, y, {
-        dir,
+        dir: -Math.PI / 2,
         style: 'gold',
-        count: 34,
-        speed: 8,
-        spread: 360,
-        gravity: 14,
+        count: 30,
+        speed: 5,
+        spread: 150,
+        gravity: 3.5,
       })
     );
   }
@@ -1971,6 +1967,33 @@ let deathSpriteP2 = null;
         el.pause();
         el.currentTime = 0;
         void el.play();
+      } catch (_) { /* ignore */ }
+    },
+  };
+  const GunnerShootSfx = {
+    el: null,
+    loadStarted: false,
+    ensureLoad() {
+      if (this.loadStarted) return;
+      this.loadStarted = true;
+      const a = new Audio(GUNNER_SHOOT_MP3_URL);
+      a.preload = 'auto';
+      a.volume = 0.55;
+      const adopt = () => {
+        this.el = a;
+      };
+      a.addEventListener('loadedmetadata', adopt, { once: true });
+      a.addEventListener('canplaythrough', adopt, { once: true });
+    },
+    /** 连射叠播：每次开枪独立实例，不截断上一发 */
+    play() {
+      this.ensureLoad();
+      const el = this.el;
+      if (!el) return;
+      try {
+        const shot = el.cloneNode();
+        shot.volume = el.volume;
+        void shot.play();
       } catch (_) { /* ignore */ }
     },
   };
@@ -2147,6 +2170,7 @@ let deathSpriteP2 = null;
     actor.attackDurationSec = 0.11;
     if (actor === player && punchSprite) punchSprite.playOnce();
     else if (actor === player2 && punchSpriteP2) punchSpriteP2.playOnce();
+    GunnerShootSfx.play();
   }
 
   function updateGunnerShooting(dt, t) {
@@ -3069,6 +3093,7 @@ let deathSpriteP2 = null;
   }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
+    GunnerShootSfx.ensureLoad();
     BGM.start();
     ambientStarted = true;
   }
