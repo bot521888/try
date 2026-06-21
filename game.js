@@ -1663,6 +1663,8 @@ let deathSpriteP2 = null;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
   const GUNNER_SHOOT_MP3_URL = 'vystrel-vystrel-ak47.mp3';
+  const GUNNER_HEADSHOT_VOLUME = 0.45;
+  const GUNNER_SHOOT_VOLUME = 0.35;
 
   /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
   const TRACER_SPARK_PALETTE = ['#fffdf0', '#ffe27a', '#ffb028', '#ff7a1a', '#8a2010'];
@@ -1951,7 +1953,8 @@ let deathSpriteP2 = null;
       this.loadStarted = true;
       const a = new Audio(GUNNER_HEADSHOT_MP3_URL);
       a.preload = 'auto';
-      a.volume = 0.67;
+      a.volume = GUNNER_HEADSHOT_VOLUME;
+      void a.load();
       const adopt = () => {
         if (a.duration && isFinite(a.duration) && a.duration > 0) {
           this.durationSec = a.duration;
@@ -1979,17 +1982,28 @@ let deathSpriteP2 = null;
     loadPromise: null,
     pool: [],
     poolIdx: 0,
-    volume: 0.55,
-    ensureLoad() {
-      if (!this.pool.length) {
-        for (let i = 0; i < 6; i++) {
-          const a = new Audio(GUNNER_SHOOT_MP3_URL);
-          a.preload = 'auto';
-          a.volume = this.volume;
-          void a.load();
-          this.pool.push(a);
-        }
+    poolPrimed: false,
+    volume: GUNNER_SHOOT_VOLUME,
+    initPool() {
+      if (this.pool.length) return;
+      for (let i = 0; i < 8; i++) {
+        const a = new Audio(GUNNER_SHOOT_MP3_URL);
+        a.preload = 'auto';
+        a.volume = this.volume;
+        const slot = { el: a, ready: false };
+        a.addEventListener(
+          'canplaythrough',
+          () => {
+            slot.ready = true;
+          },
+          { once: true }
+        );
+        void a.load();
+        this.pool.push(slot);
       }
+    },
+    ensureLoad() {
+      this.initPool();
       if (this.loadPromise) return this.loadPromise;
       this.loadPromise = (async () => {
         try {
@@ -2008,27 +2022,66 @@ let deathSpriteP2 = null;
       })();
       return this.loadPromise;
     },
-    /** 开枪即播：Web Audio 零延迟；解码完成前用预载 Audio 池 */
-    play() {
+    /** 在用户手势里立刻唤醒 AudioContext 并预载，减少第一枪延迟 */
+    warmOnUserGesture() {
+      this.initPool();
+      const ctx = ensureAudio();
+      if (ctx.state === 'suspended') void ctx.resume();
       void this.ensureLoad();
+      if (this.poolPrimed) return;
+      this.poolPrimed = true;
+      for (const slot of this.pool) {
+        const a = slot.el;
+        const vol = a.volume;
+        a.volume = 0.001;
+        const p = a.play();
+        if (p && p.then) {
+          p.then(() => {
+            a.pause();
+            a.currentTime = 0;
+            a.volume = vol;
+            slot.ready = true;
+          }).catch(() => {
+            a.volume = vol;
+          });
+        } else {
+          a.volume = vol;
+        }
+      }
+    },
+    play() {
       try {
         const ctx = ensureAudio();
         if (ctx.state === 'suspended') void ctx.resume();
         if (this.buffer) {
           const source = ctx.createBufferSource();
           source.buffer = this.buffer;
-          source.connect(this.gain || ctx.destination);
+          if (!this.gain) {
+            this.gain = ctx.createGain();
+            this.gain.gain.value = this.volume;
+            this.gain.connect(ctx.destination);
+          }
+          source.connect(this.gain);
           source.start(0);
           return;
         }
       } catch (_) { /* fall through */ }
-      if (!this.pool.length) return;
-      const a = this.pool[this.poolIdx++ % this.pool.length];
-      try {
-        a.pause();
-        a.currentTime = 0;
-        void a.play();
-      } catch (_) { /* ignore */ }
+      this.initPool();
+      if (!this.pool.length) {
+        void this.ensureLoad();
+        return;
+      }
+      for (let i = 0; i < this.pool.length; i++) {
+        const slot = this.pool[(this.poolIdx + i) % this.pool.length];
+        const a = slot.el;
+        try {
+          a.pause();
+          a.currentTime = 0;
+          void a.play();
+          this.poolIdx = (this.poolIdx + i + 1) % this.pool.length;
+          return;
+        } catch (_) { /* try next */ }
+      }
     },
   };
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
@@ -2152,7 +2205,7 @@ let deathSpriteP2 = null;
 
   function updateGunnerAimFromPointer(gameX, gameY) {
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
-    GunnerShootSfx.ensureLoad();
+    GunnerShootSfx.warmOnUserGesture();
     if (isGunnerHudPointer(gameX, gameY)) return;
     const actor = pickGunnerActorFromScreenX(gameX);
     if (!actor) return;
@@ -2166,6 +2219,7 @@ let deathSpriteP2 = null;
     if (!actor) return false;
     e.preventDefault();
     if ((actor.gunnerShootCd || 0) > 0) return true;
+    GunnerShootSfx.warmOnUserGesture();
     GunnerShootSfx.play();
     setGunnerAimFromScreen(actor, gameX, gameY);
     fireGunnerBullet(actor, t);
@@ -3962,7 +4016,7 @@ let deathSpriteP2 = null;
       thorMode = true;
       roninMode = true;
       gunnerMode = true;
-      GunnerShootSfx.ensureLoad();
+      GunnerShootSfx.warmOnUserGesture();
       if (!already) syncPlayerHpCapAndFill();
       return;
     }
@@ -4078,6 +4132,10 @@ let deathSpriteP2 = null;
   canvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'playing') return;
     if (!(player.state === 'alive' || (isCoopMode && player2.state === 'alive'))) return;
+    GunnerShootSfx.warmOnUserGesture();
+    const settlementUiOpen =
+      settlementOverlay && !settlementOverlay.classList.contains('hidden');
+    if (!ambientStarted && !settlementUiOpen) startAmbientLoop();
     const { x, y } = canvasToGameHud(e.clientX, e.clientY);
     const t = performance.now() / 1000;
     if (tryFireGunnerOnPointerDown(e, x, y, t)) return;
@@ -4200,6 +4258,9 @@ let deathSpriteP2 = null;
   window.addEventListener('pointerdown', () => {
     const settlementUiOpen =
       settlementOverlay && !settlementOverlay.classList.contains('hidden');
+    if (gameState === 'playing' && !settlementUiOpen) {
+      GunnerShootSfx.warmOnUserGesture();
+    }
     if (
       gameState === 'playing' &&
       !ambientStarted &&
@@ -4208,7 +4269,7 @@ let deathSpriteP2 = null;
     ) {
       startAmbientLoop();
     }
-  }, { once: true });
+  });
 
   // ========== 工具函数 ==========
   function boxesOverlap(a, b) {
