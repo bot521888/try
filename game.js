@@ -1385,6 +1385,11 @@ let deathSpriteP2 = null;
     god_locked: '未解锁神阶',
     god_fly: (s) => `飞行 ${s}s`,
     god_ronin: '狂暴模式',
+    god_gunner: '狂暴模式',
+    settle_gunner_title: '恭喜成为冥焰枪客',
+    settle_gunner_grade: '红黑为誓 · 弹无虚发',
+    settle_gunner_buff: '按住屏幕或鼠标连射；四发必倒。狂暴时仅能射击，不可出拳。',
+    settle_gunner_buff_coop: ' 双人：P1、P2 均已就位。',
     god_thor: '雷神闪电移动',
     god_demon: '魔神·飞行',
     god_angel: '天使降临',
@@ -1487,6 +1492,11 @@ let deathSpriteP2 = null;
     god_locked: 'No god tier yet',
     god_fly: (s) => `Fly ${s}s`,
     god_ronin: 'Berserk mode',
+    god_gunner: 'Berserk mode',
+    settle_gunner_title: 'Crimson gunner ascended',
+    settle_gunner_grade: 'Red-black vow · never miss',
+    settle_gunner_buff: 'Hold screen or mouse to fire; four hits drop any foe. Rage: shoot only, no punches.',
+    settle_gunner_buff_coop: ' Co-op: both ready.',
     god_thor: 'Thor lightning dash',
     god_demon: 'Demon · flight',
     god_angel: 'Angel descent',
@@ -1617,6 +1627,8 @@ let deathSpriteP2 = null;
   let thorMode = false;
   /** 第五次通关（已雷神）：流浪剑客；棕色光环、狂暴时每次 J 出手即银色剑气、普攻伤害为雷神面板×3 */
   let roninMode = false;
+  /** 第六次通关（已流浪剑客）：冥焰枪客；红黑光环、按住鼠标/触控连射，四发倒任意怪 */
+  let gunnerMode = false;
   /** 第二关结束选「重新开始」时随机一项：'hp'|'atk'|'atkspd'|'knock' */
   let starterRunBuff = null;
   let postL2ChoiceActive = false;
@@ -1625,6 +1637,7 @@ let deathSpriteP2 = null;
   let demonFinaleActive = false;
   let thorFinaleActive = false;
   let roninFinaleActive = false;
+  let gunnerFinaleActive = false;
   /** 第三关通关但已满阶（流浪剑客），仅统计与再来一波 */
   let level3MaxTierClearActive = false;
   /** P1 按 F 紧急回血：每局 4 次，每次回满当前 maxHp */
@@ -1644,6 +1657,15 @@ let deathSpriteP2 = null;
   const roninFootTrailParticles = [];
   /** 流浪剑客：狂暴下每次 J 出手一道银色剑气；穿透多敌，仅飞出地图边界才消失 */
   const roninSwordQi = [];
+  /** 冥焰枪客：按住指针连射 */
+  const gunnerShootPointersP1 = new Set();
+  const gunnerShootPointersP2 = new Set();
+  /** pointerId → 1(P1) | 2(P2)，用于 pointerup 释放 */
+  const gunnerShootPointerSide = new Map();
+  const GUNNER_BULLET_HITS_TO_KILL = 4;
+  const GUNNER_SHOOT_INTERVAL = 0.13;
+  const GUNNER_SHOOT_INTERVAL_RAGE = 0.07;
+  const GUNNER_BULLET_SPEED = 920;
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
   let godSkillKeyHeld = false;
   /** 双人 P2：C 键按住（外部神技条按下态） */
@@ -1660,6 +1682,7 @@ let deathSpriteP2 = null;
   }
 
   function getCurrentGodSkillTier() {
+    if (gunnerMode) return 'gunner';
     if (roninMode) return 'ronin';
     if (thorMode) return 'thor';
     if (demonMode) return 'demon';
@@ -1670,6 +1693,7 @@ let deathSpriteP2 = null;
 
   function getGodSkillButtonLabel() {
     const tier = getCurrentGodSkillTier();
+    if (tier === 'gunner') return tr('god_gunner');
     if (tier === 'ronin') return tr('god_ronin');
     if (tier === 'thor') return tr('god_thor');
     if (tier === 'demon') return tr('god_demon');
@@ -1706,6 +1730,109 @@ let deathSpriteP2 = null;
     thorSkillTrailParticles.length = 0;
     roninFootTrailParticles.length = 0;
     roninSwordQi.length = 0;
+    playerBullets.length = 0;
+    gunFireEffects.length = 0;
+    gunnerShootPointersP1.clear();
+    gunnerShootPointersP2.clear();
+    gunnerShootPointerSide.clear();
+  }
+
+  function getRoninGunnerMeleeMul() {
+    if (gunnerMode) return 6;
+    if (roninMode) return 3;
+    return 1;
+  }
+
+  function getGunnerBulletDamageForEnemy(enemy) {
+    const maxHp = enemy.maxHp || enemy.hp || 1;
+    return Math.max(1, Math.ceil(maxHp / GUNNER_BULLET_HITS_TO_KILL));
+  }
+
+  function fireGunnerBullet(actor, t) {
+    if (!gunnerMode || !actor || actor.state !== 'alive' || isVersusMode) return;
+    const dir = actor.facing || 1;
+    const ox = actor.x + config.playerWidth / 2 + dir * 20;
+    const oy = actor.y + config.playerHeight * 0.38;
+    playerBullets.push({
+      x: ox,
+      y: oy,
+      vx: dir * GUNNER_BULLET_SPEED,
+      facing: dir,
+      life: 2.4,
+    });
+    actor.gunnerShootOnlyAnim = true;
+    actor.attackStart = t;
+    actor.attackDurationSec = 0.11;
+    if (actor === player && punchSprite) punchSprite.playOnce();
+    else if (actor === player2 && punchSpriteP2) punchSpriteP2.playOnce();
+  }
+
+  function updateGunnerShooting(dt, t) {
+    if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
+    const tick = (actor, held) => {
+      if (!held || !actor || actor.state !== 'alive') return;
+      actor.gunnerShootCd = (actor.gunnerShootCd || 0) - dt;
+      if (actor.gunnerShootCd > 0) return;
+      fireGunnerBullet(actor, t);
+      actor.gunnerShootCd = actor.godRageActive
+        ? GUNNER_SHOOT_INTERVAL_RAGE
+        : GUNNER_SHOOT_INTERVAL;
+    };
+    tick(player, gunnerShootPointersP1.size > 0);
+    if (isCoopMode) tick(player2, gunnerShootPointersP2.size > 0);
+    clearGunnerShootAnim(player, t);
+    if (isCoopMode) clearGunnerShootAnim(player2, t);
+  }
+
+  function clearGunnerShootAnim(actor, t) {
+    if (!actor || !actor.gunnerShootOnlyAnim) return;
+    const dur = actor.attackDurationSec || 0.11;
+    if (actor.attackStart > 0 && t - actor.attackStart >= dur) {
+      actor.gunnerShootOnlyAnim = false;
+    }
+  }
+
+  function registerGunnerShootPointer(pointerId, side) {
+    gunnerShootPointerSide.set(pointerId, side);
+    if (side === 2) gunnerShootPointersP2.add(pointerId);
+    else gunnerShootPointersP1.add(pointerId);
+  }
+
+  function releaseGunnerShootPointer(pointerId) {
+    const side = gunnerShootPointerSide.get(pointerId);
+    if (side === 2) gunnerShootPointersP2.delete(pointerId);
+    else if (side === 1) gunnerShootPointersP1.delete(pointerId);
+    gunnerShootPointerSide.delete(pointerId);
+  }
+
+  function tryStartGunnerShootFromPointer(e, gameX, gameY) {
+    if (!gunnerMode || isVersusMode || gameState !== 'playing') return false;
+    if (!useExternalTouchHud) {
+      const R = getGameplayHudRects();
+      if (
+        hudRectHit(gameX, gameY, R.god) ||
+        hudRectHit(gameX, gameY, R.dodge) ||
+        hudRectHit(gameX, gameY, R.j) ||
+        hudRectHit(gameX, gameY, R.l) ||
+        hudRectHit(gameX, gameY, R.k)
+      ) {
+        return false;
+      }
+    }
+    let side = 1;
+    if (isCoopMode && gameX >= config.width / 2 && player2.state === 'alive') {
+      side = 2;
+    } else if (player.state !== 'alive') {
+      return false;
+    } else if (isCoopMode && gameX >= config.width / 2) {
+      return false;
+    }
+    e.preventDefault();
+    registerGunnerShootPointer(e.pointerId, side);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch (_) { /* ignore */ }
+    return true;
   }
 
   /** 天使随从包围盒（略大于玩家，便于放大绘制精灵） */
@@ -1822,7 +1949,7 @@ let deathSpriteP2 = null;
     if (isVersusMode) return;
     const tier = getCurrentGodSkillTier();
     if (!tier) return;
-    if (tier === 'ronin') {
+    if (tier === 'gunner' || tier === 'ronin') {
       if (who.godRageActive) {
         applyBerserkerRageHp(false, who);
         who.godRageActive = false;
@@ -2067,7 +2194,7 @@ let deathSpriteP2 = null;
   /** 流浪剑客狂暴：每次按下 J 发出普攻时立刻射一道剑气（不必命中）；有敌人则瞄最近，否则朝面向 */
   function spawnRoninSwordQiOnNormalAttack(source = player) {
     if (!source || source.state !== 'alive') return;
-    if (!roninMode || !source.godRageActive) return;
+    if (!roninMode || gunnerMode || !source.godRageActive) return;
     const pcx = source.x + config.playerWidth / 2;
     const pcy = source.y + config.playerHeight * 0.42;
     const alive = enemies.filter((e) => e.hp > 0);
@@ -2195,7 +2322,7 @@ let deathSpriteP2 = null;
       p.y += (p.vy || 0) * dt;
       if (p.life <= 0) roninFootTrailParticles.splice(i, 1);
     }
-    if (!roninMode || player.state !== 'alive') return;
+    if (!roninMode || gunnerMode || player.state !== 'alive') return;
     if (player.onGround && Math.abs(player.vx) > 16) {
       const rate = Math.min(1, Math.abs(player.vx) / 220) * 0.95;
       if (Math.random() < rate * dt * 70) {
@@ -2259,7 +2386,8 @@ let deathSpriteP2 = null;
       fromPlayer &&
       fromPlayer.godRageActive &&
       (getCurrentGodSkillTier() === 'berserker' ||
-        getCurrentGodSkillTier() === 'ronin')
+        getCurrentGodSkillTier() === 'ronin' ||
+        getCurrentGodSkillTier() === 'gunner')
     ) {
       d *= 2;
     }
@@ -2295,6 +2423,7 @@ let deathSpriteP2 = null;
     if (angelMode) max *= 2;
     if (demonMode) max *= 2;
     if (thorMode) max *= 2;
+    if (gunnerMode) max *= 2;
     if (starterRunBuff === 'hp') max *= 1.25;
     const rounded = Math.max(1, Math.round(max));
     player.maxHp = rounded;
@@ -3098,9 +3227,11 @@ let deathSpriteP2 = null;
     attackDurationSec: config.attackDuration / 1000,
     currentAttackStepCooldownMul: 1,
     gunCooldown: 0,
-    gunCooldownMs: 500,            // 每 0.5 秒可发射一次
+    gunCooldownMs: 500,
     gunShootTimer: 0,
-    gunShootDuration: 360,         // 枪身射击动画持续时间（ms）
+    gunShootDuration: 360,
+    gunnerShootCd: 0,
+    gunnerShootOnlyAnim: false,
     coopFriendlyLastHitAttackId: -1,
     /** 神迹状态（G / 左下条）：每人独立，互不干扰 */
     godRageActive: false,
@@ -3166,6 +3297,8 @@ let deathSpriteP2 = null;
     blockHeldLast: false,
     bHeldLast: false,
     coopFriendlyLastHitAttackId: -1,
+    gunnerShootCd: 0,
+    gunnerShootOnlyAnim: false,
     godRageActive: false,
     godThorMoveActive: false,
     godDemonFlyRemain: 0,
@@ -3422,12 +3555,13 @@ let deathSpriteP2 = null;
     ) {
       e.preventDefault();
       const already =
-        berserkerMode && angelMode && demonMode && thorMode && roninMode;
+        berserkerMode && angelMode && demonMode && thorMode && roninMode && gunnerMode;
       berserkerMode = true;
       angelMode = true;
       demonMode = true;
       thorMode = true;
       roninMode = true;
+      gunnerMode = true;
       if (!already) syncPlayerHpCapAndFill();
       return;
     }
@@ -3472,6 +3606,9 @@ let deathSpriteP2 = null;
       godSkillPressingPointers.clear();
       godPointerIdsP1.clear();
       godPointerIdsP2.clear();
+      gunnerShootPointersP1.clear();
+      gunnerShootPointersP2.clear();
+      gunnerShootPointerSide.clear();
       e.preventDefault();
       return;
     }
@@ -3538,8 +3675,9 @@ let deathSpriteP2 = null;
   canvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'playing') return;
     if (!(player.state === 'alive' || (isCoopMode && player2.state === 'alive'))) return;
-    if (useExternalTouchHud) return;
     const { x, y } = canvasToGameHud(e.clientX, e.clientY);
+    if (tryStartGunnerShootFromPointer(e, x, y)) return;
+    if (useExternalTouchHud) return;
     const R = getGameplayHudRects();
     if (!isVersusMode && hudRectHit(x, y, R.god)) {
       e.preventDefault();
@@ -3581,6 +3719,7 @@ let deathSpriteP2 = null;
     godSkillPressingPointers.delete(e.pointerId);
     godPointerIdsP1.delete(e.pointerId);
     godPointerIdsP2.delete(e.pointerId);
+    releaseGunnerShootPointer(e.pointerId);
     const code = hudPointerKeyHold.get(e.pointerId);
     if (code) {
       keys[code] = false;
@@ -4858,6 +4997,7 @@ let deathSpriteP2 = null;
     // 普通攻击（J 三段连招）
     if (
       jPressed &&
+      !(gunnerMode && player.godRageActive) &&
       !inAttack &&
       t >= player.attackCooldownEnd &&
       !player.isSuperAttacking &&
@@ -4995,6 +5135,7 @@ let deathSpriteP2 = null;
 
   function handlePlayer2Attack(t) {
     if (!isCoopMode || player2.state !== 'alive') return;
+    if (player2.gunnerShootOnlyAnim) return;
     const attackMid =
       player2.attackStart > 0 &&
       t - player2.attackStart >= 0.06 &&
@@ -5011,7 +5152,7 @@ let deathSpriteP2 = null;
       if (enemy.lastHitAttackIdP2 === player2.currentAttackId) continue;
       enemy.lastHitAttackIdP2 = player2.currentAttackId;
       let dmgBase = getPlayerDamage(player2);
-      if (roninMode) dmgBase *= 3;
+      dmgBase *= getRoninGunnerMeleeMul();
       if (player2.isSuperAttacking) {
         dmgBase *= 3;
       } else if (attackStep >= 1 && attackStep <= 3) {
@@ -5081,7 +5222,7 @@ let deathSpriteP2 = null;
     ) {
       player.coopFriendlyLastHitAttackId = player2.currentAttackId;
       let ffDmg = getPlayerDamage(player2);
-      if (roninMode) ffDmg *= 3;
+      ffDmg *= getRoninGunnerMeleeMul();
       if (player2.isSuperAttacking) ffDmg *= 3;
       else if (attackStep >= 1 && attackStep <= 3) ffDmg *= comboData[attackStep - 1].damageMul;
       if (player2.combo >= 3) ffDmg *= 1.5;
@@ -5302,6 +5443,7 @@ let deathSpriteP2 = null;
 
     if (
       bPressed &&
+      !(gunnerMode && player2.godRageActive) &&
       !inAtk &&
       !player2.isSuperAttacking &&
       !player2.isBlocking &&
@@ -6076,11 +6218,11 @@ let deathSpriteP2 = null;
         const cx = enemy.x + enemy.width / 2;
         const cy = enemy.y + enemy.height / 2;
         hitFlashEffects.push({ x: cx, y: cy, startTime: t, duration: 0.06 });
-        spawnBleedEffect(enemy);
 
         const hpBeforeBullet = enemy.hp;
-        enemy.hp = Math.max(0, enemy.hp - b.damage);
-        if ((berserkerMode || angelMode || demonMode || thorMode || roninMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
+        const bulletDmg = getGunnerBulletDamageForEnemy(enemy);
+        enemy.hp = Math.max(0, enemy.hp - bulletDmg);
+        if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
         }
         if (hpBeforeBullet > 0 && enemy.hp <= 0) {
@@ -6313,6 +6455,7 @@ let deathSpriteP2 = null;
 
   function handlePlayerAttack(t) {
     if (player.state !== 'alive') return;
+    if (player.gunnerShootOnlyAnim) return;
     // 出拳命中窗口：0.07s ~ 0.14s
     const attackMid =
       player.attackStart > 0 &&
@@ -6380,7 +6523,8 @@ let deathSpriteP2 = null;
         if (
           player.godRageActive &&
           (getCurrentGodSkillTier() === 'berserker' ||
-            getCurrentGodSkillTier() === 'ronin')
+            getCurrentGodSkillTier() === 'ronin' ||
+            getCurrentGodSkillTier() === 'gunner')
         ) {
           for (let i = 0; i < 10; i++) {
             hitParticles.push({
@@ -6407,7 +6551,7 @@ let deathSpriteP2 = null;
           }
         }
         let dmg = getPlayerDamage(player);
-        if (roninMode) dmg *= 3;
+        dmg *= getRoninGunnerMeleeMul();
         if (player.isSuperAttacking) {
           dmg *= 3; // 超级拳 3 倍伤害
         } else {
@@ -6477,7 +6621,7 @@ let deathSpriteP2 = null;
     ) {
       player2.coopFriendlyLastHitAttackId = player.currentAttackId;
       let ffDmg = getPlayerDamage(player);
-      if (roninMode) ffDmg *= 3;
+      ffDmg *= getRoninGunnerMeleeMul();
       if (player.isSuperAttacking) ffDmg *= 3;
       else if (attackStep >= 1 && attackStep <= 3) ffDmg *= comboData[attackStep - 1].damageMul;
       if (player.combo >= 3) ffDmg *= 1.5;
@@ -6706,6 +6850,7 @@ let deathSpriteP2 = null;
         // 无尽：每通一轮（原第三关全部波次之后）→ 敌人更难 + 与旧版相同的神阶结算升级；点 RETRY 后再开下一轮
         bumpEnemyClearRankAfterFinale();
         endlessCombatStack = Math.min(10, endlessCombatStack + 1);
+        playerBullets.length = 0;
         projectiles.length = 0;
         angelMinionBolts.length = 0;
         bossAoes.length = 0;
@@ -6724,8 +6869,10 @@ let deathSpriteP2 = null;
         this.labelText = '';
         this.labelTimer = 0;
         settlementShown = true;
-        if (roninMode) {
+        if (gunnerMode) {
           showLevel3ClearAlreadyMaxSettlement();
+        } else if (roninMode) {
+          showGunnerFinaleSettlement();
         } else if (thorMode) {
           showRoninFinaleSettlement();
         } else if (demonMode) {
@@ -6996,6 +7143,7 @@ let deathSpriteP2 = null;
     demonFinaleActive = false;
     thorFinaleActive = false;
     roninFinaleActive = false;
+    gunnerFinaleActive = false;
     stopSettlementScreenMusic();
     BGM.cutGameplayMusicNow();
     void playSettlementScreenMusic();
@@ -7006,10 +7154,49 @@ let deathSpriteP2 = null;
     }
     syncPlayerHpCapAndFill();
     applySettlementStatsAndGrade();
-    if (settlementTitleEl) settlementTitleEl.textContent = tr('settle_l3_title');
-    gradeEl.textContent = tr('settle_l3_grade');
+    if (settlementTitleEl) {
+      settlementTitleEl.textContent = gunnerMode ? tr('settle_gunner_title') : tr('settle_l3_title');
+    }
+    gradeEl.textContent = gunnerMode ? tr('settle_gunner_grade') : tr('settle_l3_grade');
     gradeEl.className = 'settlement-grade s';
-    buffEl.textContent = tr('settle_l3_buff') + (isCoopMode ? tr('settle_l3_buff_coop') : '');
+    buffEl.textContent = (gunnerMode ? tr('settle_gunner_buff') : tr('settle_l3_buff')) +
+      (isCoopMode ? (gunnerMode ? tr('settle_gunner_buff_coop') : tr('settle_l3_buff_coop')) : '');
+    buffEl.classList.remove('hidden');
+    Object.keys(keys).forEach((k) => { keys[k] = false; });
+    gameState = 'settlement';
+    settlementOverlay.classList.remove('hidden');
+  }
+
+  /** 第六次全通（已流浪剑客）：冥焰枪客；按住鼠标/触控连射，四发必倒 */
+  function showGunnerFinaleSettlement() {
+    postL2ChoiceActive = false;
+    level3MaxTierClearActive = false;
+    gunnerFinaleActive = true;
+    berserkerFinaleActive = false;
+    angelFinaleActive = false;
+    demonFinaleActive = false;
+    thorFinaleActive = false;
+    roninFinaleActive = false;
+    if (!berserkerMode) berserkerMode = true;
+    if (!angelMode) angelMode = true;
+    if (!demonMode) demonMode = true;
+    if (!thorMode) thorMode = true;
+    if (!roninMode) roninMode = true;
+    gunnerMode = true;
+    stopSettlementScreenMusic();
+    BGM.cutGameplayMusicNow();
+    void playSettlementScreenMusic();
+    setPostLevel2RowVisible(false);
+    if (retryBtn) {
+      retryBtn.textContent = tr('btn_wave_again');
+      retryBtn.classList.remove('hidden');
+    }
+    syncPlayerHpCapAndFill();
+    applySettlementStatsAndGrade();
+    if (settlementTitleEl) settlementTitleEl.textContent = tr('settle_gunner_title');
+    gradeEl.textContent = tr('settle_gunner_grade');
+    gradeEl.className = 'settlement-grade s';
+    buffEl.textContent = tr('settle_gunner_buff') + (isCoopMode ? tr('settle_gunner_buff_coop') : '');
     buffEl.classList.remove('hidden');
     Object.keys(keys).forEach((k) => { keys[k] = false; });
     gameState = 'settlement';
@@ -7025,6 +7212,7 @@ let deathSpriteP2 = null;
     angelFinaleActive = false;
     demonFinaleActive = false;
     thorFinaleActive = false;
+    gunnerFinaleActive = false;
     if (!berserkerMode) berserkerMode = true;
     if (!angelMode) angelMode = true;
     if (!demonMode) demonMode = true;
@@ -7303,6 +7491,7 @@ let deathSpriteP2 = null;
     const keepDemon = options.keepDemon === true;
     const keepThor = options.keepThor === true;
     const keepRonin = options.keepRonin === true;
+    const keepGunner = options.keepGunner === true;
     const keepStarter = options.keepStarter === true;
     const preserveEndlessStack =
       keepBerserker ||
@@ -7310,6 +7499,7 @@ let deathSpriteP2 = null;
       keepDemon ||
       keepThor ||
       keepRonin ||
+      keepGunner ||
       keepStarter;
     if (!preserveEndlessStack) {
       endlessCombatStack = 0;
@@ -7325,23 +7515,31 @@ let deathSpriteP2 = null;
       demonMode = false;
       thorMode = false;
       roninMode = false;
+      gunnerMode = false;
     }
     if (!keepAngel) {
       angelMode = false;
       demonMode = false;
       thorMode = false;
       roninMode = false;
+      gunnerMode = false;
     }
     if (!keepDemon) {
       demonMode = false;
       thorMode = false;
       roninMode = false;
+      gunnerMode = false;
     }
     if (!keepThor) {
       thorMode = false;
       roninMode = false;
+      gunnerMode = false;
     }
-    if (!keepRonin) roninMode = false;
+    if (!keepRonin) {
+      roninMode = false;
+      gunnerMode = false;
+    }
+    if (!keepGunner) gunnerMode = false;
     if (!keepStarter) starterRunBuff = null;
     healChargesRemaining = 4;
     healChargesRemainingP2 = 4;
@@ -7361,6 +7559,11 @@ let deathSpriteP2 = null;
     thorSkillTrailParticles.length = 0;
     roninFootTrailParticles.length = 0;
     roninSwordQi.length = 0;
+    playerBullets.length = 0;
+    gunFireEffects.length = 0;
+    gunnerShootPointersP1.clear();
+    gunnerShootPointersP2.clear();
+    gunnerShootPointerSide.clear();
     godSkillKeyHeld = false;
     godSkillKeyHeldP2 = false;
     godSkillPressingPointers.clear();
@@ -7401,6 +7604,8 @@ let deathSpriteP2 = null;
     player.dodgeHoldRepeat = 0;
     player.dodgeDir = player.facing || 1;
     player.knockbackEnd = 0;
+    player.gunnerShootCd = 0;
+    player.gunnerShootOnlyAnim = false;
     player.isBlocking = false;
     player.blockFlashTimer = 0;
     player.blockShakeTimer = 0;
@@ -7423,6 +7628,8 @@ let deathSpriteP2 = null;
     player2.onGround = true;
     player2.isBlocking = false;
     player2.knockbackEnd = 0;
+    player2.gunnerShootCd = 0;
+    player2.gunnerShootOnlyAnim = false;
     player2.blockFlashTimer = 0;
     player2.blockShakeTimer = 0;
     player2.shieldGoldTimer = 0;
@@ -7568,6 +7775,25 @@ let deathSpriteP2 = null;
           keepDemon: true,
           keepThor: true,
           keepRonin: true,
+          keepGunner: true,
+        });
+        return;
+      }
+      if (gunnerFinaleActive) {
+        gunnerFinaleActive = false;
+        settlementShown = false;
+        settlementOverlay.classList.add('hidden');
+        if (settlementTitleEl) settlementTitleEl.textContent = tr('settle_result');
+        Object.keys(keys).forEach((k) => { keys[k] = false; });
+        gameState = 'playing';
+        stopSettlementScreenMusic();
+        resetGame({
+          keepBerserker: true,
+          keepAngel: true,
+          keepDemon: true,
+          keepThor: true,
+          keepRonin: true,
+          keepGunner: true,
         });
         return;
       }
@@ -7762,6 +7988,8 @@ let deathSpriteP2 = null;
     updateThorSkillTrail(dt, t);
     updateRoninSwordQi(dt, t);
     updateRoninFootTrail(dt, t);
+    updateGunnerShooting(dt, t);
+    updatePlayerBullets(dt, t);
     syncPlayerAnimAction(t);
 
     if (player.hp <= 0 && player.state !== 'dead') {
@@ -7820,7 +8048,6 @@ let deathSpriteP2 = null;
     updateEnemies(dt, t);
     resolveEnemyOverlap();
     resolvePlayerEnemyOverlap();
-    // 枪系统停用
     updateProjectiles(dt);
     updateHitParticles(dt);
     updateBerserkerDeathBeams(dt);
@@ -8135,7 +8362,49 @@ let deathSpriteP2 = null;
   function drawGodTierHaloAboveActor(ctx, p, t) {
     if (!p || p.state !== 'alive') return;
     const hx0 = p.x + config.playerWidth / 2;
-    if (roninMode && berserkerMode) {
+    if (gunnerMode && berserkerMode) {
+      const hx = hx0;
+      const hy = p.y - 12 + Math.sin(t * 2.9) * 2.2;
+      const rx = 36 + Math.sin(t * 3.4) * 3;
+      const ry = 10 + Math.sin(t * 3.4) * 1.3;
+      ctx.save();
+      const pulse = 0.8 + Math.sin(t * 4.2) * 0.1;
+      ctx.globalAlpha = pulse;
+      const glow = ctx.createRadialGradient(hx, hy - 4, 0, hx, hy + 3, rx + 22);
+      glow.addColorStop(0, 'rgba(255, 60, 60, 0.55)');
+      glow.addColorStop(0.25, 'rgba(180, 20, 30, 0.45)');
+      glow.addColorStop(0.55, 'rgba(40, 8, 12, 0.38)');
+      glow.addColorStop(1, 'rgba(8, 4, 6, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, rx + 14, ry + 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(220, 40, 50, ${0.95 * pulse})`;
+      ctx.lineWidth = 3.4;
+      ctx.shadowColor = 'rgba(255, 50, 60, 0.9)';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(18, 8, 10, ${0.92 * pulse})`;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, rx * 0.88, ry * 0.8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 12; i++) {
+        const phase = t * 3.1 + i * 0.72;
+        const ra = rx + 6 + (i % 4) * 2.4;
+        const px = hx + Math.cos(phase) * ra;
+        const py = hy + Math.sin(phase * 1.08) * (ry + 5);
+        const sz = 2 + (i % 3) * 0.9;
+        const fa = 0.38 + 0.42 * (0.5 + 0.5 * Math.sin(phase * 2.6 + i));
+        ctx.globalAlpha = fa * pulse;
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(255, 70, 80, 0.92)' : 'rgba(12, 6, 8, 0.95)';
+        ctx.fillRect(px - sz / 2, py - sz / 2, sz, sz);
+      }
+      ctx.restore();
+    } else if (roninMode && berserkerMode) {
       const hx = hx0;
       const hy = p.y - 12 + Math.sin(t * 2.7) * 2;
       const rx = 35 + Math.sin(t * 3.2) * 2.8;
@@ -8178,7 +8447,7 @@ let deathSpriteP2 = null;
         ctx.fillRect(px - sz / 2, py - sz / 2, sz, sz);
       }
       ctx.restore();
-    } else if (thorMode && berserkerMode && !roninMode) {
+    } else if (thorMode && berserkerMode && !roninMode && !gunnerMode) {
       const hx = hx0;
       const hy = p.y - 13 + Math.sin(t * 3.2) * 2;
       const rx = 36 + Math.sin(t * 3.4) * 3;
@@ -8413,6 +8682,7 @@ let deathSpriteP2 = null;
       }
     }
     btn.classList.toggle('touch-god--held', !!(sideHeld && hasGod));
+    btn.classList.toggle('touch-god--tier-gunner', tier === 'gunner');
     btn.classList.toggle('touch-god--tier-ronin', tier === 'ronin');
     btn.classList.toggle('touch-god--tier-thor', tier === 'thor');
     btn.classList.toggle('touch-god--tier-berserker', tier === 'berserker');
@@ -8421,7 +8691,7 @@ let deathSpriteP2 = null;
     btn.classList.toggle('touch-god--active-thor', !!(owner.godThorMoveActive && tier === 'thor'));
     btn.classList.toggle(
       'touch-god--active-rage',
-      !!(owner.godRageActive && tier && (tier === 'ronin' || tier === 'berserker'))
+      !!(owner.godRageActive && tier && (tier === 'ronin' || tier === 'berserker' || tier === 'gunner'))
     );
     btn.classList.toggle('touch-god--active-angel', !!(owner.godAngelSummonActive && tier === 'angel'));
     btn.classList.toggle(
@@ -9379,6 +9649,26 @@ let deathSpriteP2 = null;
       ctx.beginPath();
       ctx.arc(ab.x, ab.y, 6, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    for (const b of playerBullets) {
+      ctx.save();
+      const dir = b.facing || 1;
+      if (gunBulletSprite.complete && gunBulletSprite.naturalWidth > 0) {
+        const bw = 16;
+        const bh = 8;
+        ctx.translate(b.x, b.y);
+        if (dir < 0) ctx.scale(-1, 1);
+        ctx.drawImage(gunBulletSprite, -bw / 2, -bh / 2, bw, bh);
+      } else {
+        ctx.fillStyle = '#ff3344';
+        ctx.shadowColor = 'rgba(255, 40, 50, 0.85)';
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
 
