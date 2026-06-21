@@ -1663,8 +1663,18 @@ let deathSpriteP2 = null;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
   const GUNNER_SHOOT_MP3_URL = 'vystrel-vystrel-ak47.mp3';
-  const GUNNER_HEADSHOT_VOLUME = 0.45;
+  const GUNNER_HEADSHOT_VOLUME = 0.25;
   const GUNNER_SHOOT_VOLUME = 0.35;
+
+  /** 跳过 MP3 文件开头的静音，减少「点了才响」的体感延迟 */
+  function sfxFindAttackOffset(audioBuffer, scanSec = 0.18, threshold = 0.025) {
+    const ch = audioBuffer.getChannelData(0);
+    const maxI = Math.min(ch.length, Math.floor(scanSec * audioBuffer.sampleRate));
+    for (let i = 0; i < maxI; i++) {
+      if (Math.abs(ch[i]) > threshold) return i / audioBuffer.sampleRate;
+    }
+    return 0;
+  }
 
   /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
   const TRACER_SPARK_PALETTE = ['#fffdf0', '#ffe27a', '#ffb028', '#ff7a1a', '#8a2010'];
@@ -1945,40 +1955,55 @@ let deathSpriteP2 = null;
     for (const burst of headshotBurstEffects) burst.draw(ctx);
   }
   const GunnerHeadshotSfx = {
-    el: null,
+    buffer: null,
+    gain: null,
+    startOffset: 0,
+    loadPromise: null,
     durationSec: 0.45,
-    loadStarted: false,
     ensureLoad() {
-      if (this.loadStarted) return;
-      this.loadStarted = true;
-      const a = new Audio(GUNNER_HEADSHOT_MP3_URL);
-      a.preload = 'auto';
-      a.volume = GUNNER_HEADSHOT_VOLUME;
-      void a.load();
-      const adopt = () => {
-        if (a.duration && isFinite(a.duration) && a.duration > 0) {
-          this.durationSec = a.duration;
-        }
-        this.el = a;
-      };
-      a.addEventListener('loadedmetadata', adopt, { once: true });
-      a.addEventListener('canplaythrough', adopt, { once: true });
+      if (this.loadPromise) return this.loadPromise;
+      this.loadPromise = (async () => {
+        try {
+          const ctx = ensureAudio();
+          const res = await fetch(GUNNER_HEADSHOT_MP3_URL);
+          if (!res.ok) return;
+          const raw = await res.arrayBuffer();
+          this.buffer = await ctx.decodeAudioData(raw);
+          if (this.buffer.duration > 0) this.durationSec = this.buffer.duration;
+          this.startOffset = sfxFindAttackOffset(this.buffer);
+          if (!this.gain) {
+            this.gain = ctx.createGain();
+            this.gain.gain.value = GUNNER_HEADSHOT_VOLUME;
+            this.gain.connect(ctx.destination);
+          }
+        } catch (_) { /* ignore */ }
+      })();
+      return this.loadPromise;
     },
-    /** 可打断：每次爆头从头播放 */
     play() {
-      this.ensureLoad();
-      const el = this.el;
-      if (!el) return;
       try {
-        el.pause();
-        el.currentTime = 0;
-        void el.play();
+        const ctx = ensureAudio();
+        if (ctx.state === 'suspended') void ctx.resume();
+        if (this.buffer) {
+          const source = ctx.createBufferSource();
+          source.buffer = this.buffer;
+          if (!this.gain) {
+            this.gain = ctx.createGain();
+            this.gain.gain.value = GUNNER_HEADSHOT_VOLUME;
+            this.gain.connect(ctx.destination);
+          }
+          source.connect(this.gain);
+          source.start(0, this.startOffset);
+          return;
+        }
       } catch (_) { /* ignore */ }
+      void this.ensureLoad();
     },
   };
   const GunnerShootSfx = {
     buffer: null,
     gain: null,
+    startOffset: 0,
     loadPromise: null,
     pool: [],
     poolIdx: 0,
@@ -2013,6 +2038,7 @@ let deathSpriteP2 = null;
           if (!res.ok) return;
           const raw = await res.arrayBuffer();
           this.buffer = await ctx.decodeAudioData(raw);
+          this.startOffset = sfxFindAttackOffset(this.buffer);
           if (!this.gain) {
             this.gain = ctx.createGain();
             this.gain.gain.value = this.volume;
@@ -2062,7 +2088,7 @@ let deathSpriteP2 = null;
             this.gain.connect(ctx.destination);
           }
           source.connect(this.gain);
-          source.start(0);
+          source.start(0, this.startOffset || 0);
           return;
         }
       } catch (_) { /* fall through */ }
@@ -2203,6 +2229,12 @@ let deathSpriteP2 = null;
     );
   }
 
+  function prepGunnerCombatAudio() {
+    if (!gunnerMode) return;
+    GunnerShootSfx.warmOnUserGesture();
+    void GunnerHeadshotSfx.ensureLoad();
+  }
+
   function updateGunnerAimFromPointer(gameX, gameY) {
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
     GunnerShootSfx.warmOnUserGesture();
@@ -2217,8 +2249,8 @@ let deathSpriteP2 = null;
     if (isGunnerHudPointer(gameX, gameY)) return false;
     const actor = pickGunnerActorFromScreenX(gameX);
     if (!actor) return false;
-    e.preventDefault();
     if ((actor.gunnerShootCd || 0) > 0) return true;
+    e.preventDefault();
     GunnerShootSfx.warmOnUserGesture();
     GunnerShootSfx.play();
     setGunnerAimFromScreen(actor, gameX, gameY);
@@ -3186,6 +3218,8 @@ let deathSpriteP2 = null;
     BGM.start();
     ambientStarted = true;
   }
+  void GunnerShootSfx.ensureLoad();
+  void GunnerHeadshotSfx.ensureLoad();
   function triggerBossPhase2Music() {
     const ctx = ensureAudio();
     const t = ctx.currentTime;
@@ -4041,7 +4075,10 @@ let deathSpriteP2 = null;
     if (gameState === 'playing' && player.state === 'alive' && e.code === 'KeyG') {
       e.preventDefault();
       godSkillKeyHeld = true;
-      if (!e.repeat) toggleGodSkill(player);
+      if (!e.repeat) {
+        prepGunnerCombatAudio();
+        toggleGodSkill(player);
+      }
       return;
     }
     if (isCoopMode && gameState === 'playing' && player2.state === 'alive' && e.code === 'KeyC') {
