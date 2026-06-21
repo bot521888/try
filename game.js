@@ -1388,7 +1388,7 @@ let deathSpriteP2 = null;
     god_gunner: '狂暴模式',
     settle_gunner_title: '恭喜成为冥焰枪客',
     settle_gunner_grade: '红黑为誓 · 弹无虚发',
-    settle_gunner_buff: '按住屏幕或鼠标连射；四发必倒。狂暴时仅能射击，不可出拳。',
+    settle_gunner_buff: '移动鼠标调整发射线，点击射击；四发倒身体、爆头一击。狂暴时仅能射击。',
     settle_gunner_buff_coop: ' 双人：P1、P2 均已就位。',
     god_thor: '雷神闪电移动',
     god_demon: '魔神·飞行',
@@ -1495,7 +1495,7 @@ let deathSpriteP2 = null;
     god_gunner: 'Berserk mode',
     settle_gunner_title: 'Crimson gunner ascended',
     settle_gunner_grade: 'Red-black vow · never miss',
-    settle_gunner_buff: 'Hold screen or mouse to fire; four hits drop any foe. Rage: shoot only, no punches.',
+    settle_gunner_buff: 'Move mouse to aim, click to fire; four body hits or one headshot. Rage: shoot only.',
     settle_gunner_buff_coop: ' Co-op: both ready.',
     god_thor: 'Thor lightning dash',
     god_demon: 'Demon · flight',
@@ -1657,18 +1657,12 @@ let deathSpriteP2 = null;
   const roninFootTrailParticles = [];
   /** 流浪剑客：狂暴下每次 J 出手一道银色剑气；穿透多敌，仅飞出地图边界才消失 */
   const roninSwordQi = [];
-  /** 冥焰枪客：按住指针连射 */
-  const gunnerShootPointersP1 = new Set();
-  const gunnerShootPointersP2 = new Set();
-  /** pointerId → 1(P1) | 2(P2)，用于 pointerup 释放 */
-  const gunnerShootPointerSide = new Map();
+  /** 冥焰枪客：瞄准用（pointermove 更新角度，pointerdown 点射） */
   const GUNNER_BULLET_HITS_TO_KILL = 4;
-  const GUNNER_SHOOT_INTERVAL = 0.13;
-  const GUNNER_SHOOT_INTERVAL_RAGE = 0.07;
+  const GUNNER_SHOOT_INTERVAL = 0.5;
   const GUNNER_BULLET_SPEED = 920;
+  const GUNNER_AIM_LINE_LEN = 300;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
-  /** 爆头音效播放期间禁止再次开火（全局，音效不可打断） */
-  let gunnerHeadshotLockUntil = 0;
   const GunnerHeadshotSfx = {
     el: null,
     durationSec: 0.45,
@@ -1687,25 +1681,16 @@ let deathSpriteP2 = null;
       a.addEventListener('loadedmetadata', adopt, { once: true });
       a.addEventListener('canplaythrough', adopt, { once: true });
     },
-    /** 已在播放时不重播、不截断；返回本次应锁定的秒数 */
-    playAndLock(t) {
+    /** 可打断：每次爆头从头播放 */
+    play() {
       this.ensureLoad();
-      if (t < gunnerHeadshotLockUntil) {
-        return gunnerHeadshotLockUntil - t;
-      }
-      const dur = this.durationSec;
-      gunnerHeadshotLockUntil = t + dur;
       const el = this.el;
-      if (el) {
-        try {
-          el.currentTime = 0;
-          void el.play();
-        } catch (_) { /* ignore */ }
-      }
-      return dur;
-    },
-    isLocked(t) {
-      return t < gunnerHeadshotLockUntil;
+      if (!el) return;
+      try {
+        el.pause();
+        el.currentTime = 0;
+        void el.play();
+      } catch (_) { /* ignore */ }
     },
   };
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
@@ -1774,9 +1759,103 @@ let deathSpriteP2 = null;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
     gunFireEffects.length = 0;
-    gunnerShootPointersP1.clear();
-    gunnerShootPointersP2.clear();
-    gunnerShootPointerSide.clear();
+  }
+
+  function getGunnerMuzzlePos(actor) {
+    const dir = actor.facing || 1;
+    return {
+      x: actor.x + config.playerWidth / 2 + dir * 20,
+      y: actor.y + config.playerHeight * 0.38,
+    };
+  }
+
+  function defaultGunnerAimAngle(actor) {
+    return (actor.facing || 1) > 0 ? 0 : Math.PI;
+  }
+
+  function ensureGunnerAimAngle(actor) {
+    if (typeof actor.gunnerAimAngle !== 'number') {
+      actor.gunnerAimAngle = defaultGunnerAimAngle(actor);
+    }
+    return actor.gunnerAimAngle;
+  }
+
+  function setGunnerAimFromScreen(actor, gameX, gameY) {
+    if (!actor || actor.state !== 'alive') return;
+    const m = getGunnerMuzzlePos(actor);
+    let dx = gameX - m.x;
+    let dy = gameY - m.y;
+    const dir = actor.facing || 1;
+    if (dir > 0 && dx < 24) dx = 24;
+    if (dir < 0 && dx > -24) dx = -24;
+    actor.gunnerAimAngle = Math.atan2(dy, dx);
+  }
+
+  function pickGunnerActorFromScreenX(gameX) {
+    if (isCoopMode && gameX >= config.width / 2 && player2.state === 'alive') {
+      return player2;
+    }
+    if (player.state === 'alive' && (!isCoopMode || gameX < config.width / 2)) {
+      return player;
+    }
+    return null;
+  }
+
+  function isGunnerHudPointer(gameX, gameY) {
+    if (useExternalTouchHud) return false;
+    const R = getGameplayHudRects();
+    return (
+      hudRectHit(gameX, gameY, R.god) ||
+      hudRectHit(gameX, gameY, R.dodge) ||
+      hudRectHit(gameX, gameY, R.j) ||
+      hudRectHit(gameX, gameY, R.l) ||
+      hudRectHit(gameX, gameY, R.k)
+    );
+  }
+
+  function updateGunnerAimFromPointer(gameX, gameY) {
+    if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
+    if (isGunnerHudPointer(gameX, gameY)) return;
+    const actor = pickGunnerActorFromScreenX(gameX);
+    if (!actor) return;
+    setGunnerAimFromScreen(actor, gameX, gameY);
+  }
+
+  function tryFireGunnerOnPointerDown(e, gameX, gameY, t) {
+    if (!gunnerMode || isVersusMode || gameState !== 'playing') return false;
+    if (isGunnerHudPointer(gameX, gameY)) return false;
+    const actor = pickGunnerActorFromScreenX(gameX);
+    if (!actor) return false;
+    e.preventDefault();
+    setGunnerAimFromScreen(actor, gameX, gameY);
+    if ((actor.gunnerShootCd || 0) > 0) return true;
+    fireGunnerBullet(actor, t);
+    actor.gunnerShootCd = GUNNER_SHOOT_INTERVAL;
+    return true;
+  }
+
+  function drawGunnerAimLine(ctx, actor) {
+    if (!gunnerMode || !actor || actor.state !== 'alive') return;
+    const ang = ensureGunnerAimAngle(actor);
+    const m = getGunnerMuzzlePos(actor);
+    const tx = m.x + Math.cos(ang) * GUNNER_AIM_LINE_LEN;
+    const ty = m.y + Math.sin(ang) * GUNNER_AIM_LINE_LEN;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 55, 65, 0.92)';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([8, 6]);
+    ctx.shadowColor = 'rgba(255, 40, 50, 0.55)';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(m.x, m.y);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255, 90, 100, 0.95)';
+    ctx.beginPath();
+    ctx.arc(tx, ty, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function getRoninGunnerMeleeMul() {
@@ -1794,15 +1873,16 @@ let deathSpriteP2 = null;
 
   function fireGunnerBullet(actor, t) {
     if (!gunnerMode || !actor || actor.state !== 'alive' || isVersusMode) return;
-    const dir = actor.facing || 1;
-    const ox = actor.x + config.playerWidth / 2 + dir * 20;
-    const oy = actor.y + config.playerHeight * 0.38;
+    const ang = ensureGunnerAimAngle(actor);
+    const spd = GUNNER_BULLET_SPEED;
+    const m = getGunnerMuzzlePos(actor);
     playerBullets.push({
-      x: ox,
-      y: oy,
-      vx: dir * GUNNER_BULLET_SPEED,
-      facing: dir,
-      life: 2.4,
+      x: m.x + Math.cos(ang) * 8,
+      y: m.y + Math.sin(ang) * 8,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd,
+      facing: Math.sign(Math.cos(ang)) || actor.facing || 1,
+      life: 3.2,
       owner: actor,
     });
     actor.gunnerShootOnlyAnim = true;
@@ -1814,20 +1894,14 @@ let deathSpriteP2 = null;
 
   function updateGunnerShooting(dt, t) {
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
-    const tick = (actor, held) => {
-      if (!held || !actor || actor.state !== 'alive') return;
-      if (GunnerHeadshotSfx.isLocked(t)) return;
-      actor.gunnerShootCd = (actor.gunnerShootCd || 0) - dt;
-      if (actor.gunnerShootCd > 0) return;
-      fireGunnerBullet(actor, t);
-      actor.gunnerShootCd = actor.godRageActive
-        ? GUNNER_SHOOT_INTERVAL_RAGE
-        : GUNNER_SHOOT_INTERVAL;
-    };
-    tick(player, gunnerShootPointersP1.size > 0);
-    if (isCoopMode) tick(player2, gunnerShootPointersP2.size > 0);
-    clearGunnerShootAnim(player, t);
-    if (isCoopMode) clearGunnerShootAnim(player2, t);
+    for (const actor of isCoopMode ? [player, player2] : [player]) {
+      if (!actor || actor.state !== 'alive') continue;
+      if (actor.gunnerShootCd > 0) {
+        actor.gunnerShootCd -= dt;
+        if (actor.gunnerShootCd < 0) actor.gunnerShootCd = 0;
+      }
+      clearGunnerShootAnim(actor, t);
+    }
   }
 
   function clearGunnerShootAnim(actor, t) {
@@ -1838,47 +1912,11 @@ let deathSpriteP2 = null;
     }
   }
 
-  function registerGunnerShootPointer(pointerId, side) {
-    gunnerShootPointerSide.set(pointerId, side);
-    if (side === 2) gunnerShootPointersP2.add(pointerId);
-    else gunnerShootPointersP1.add(pointerId);
-  }
-
-  function releaseGunnerShootPointer(pointerId) {
-    const side = gunnerShootPointerSide.get(pointerId);
-    if (side === 2) gunnerShootPointersP2.delete(pointerId);
-    else if (side === 1) gunnerShootPointersP1.delete(pointerId);
-    gunnerShootPointerSide.delete(pointerId);
-  }
-
-  function tryStartGunnerShootFromPointer(e, gameX, gameY) {
-    if (!gunnerMode || isVersusMode || gameState !== 'playing') return false;
-    if (!useExternalTouchHud) {
-      const R = getGameplayHudRects();
-      if (
-        hudRectHit(gameX, gameY, R.god) ||
-        hudRectHit(gameX, gameY, R.dodge) ||
-        hudRectHit(gameX, gameY, R.j) ||
-        hudRectHit(gameX, gameY, R.l) ||
-        hudRectHit(gameX, gameY, R.k)
-      ) {
-        return false;
-      }
-    }
-    let side = 1;
-    if (isCoopMode && gameX >= config.width / 2 && player2.state === 'alive') {
-      side = 2;
-    } else if (player.state !== 'alive') {
-      return false;
-    } else if (isCoopMode && gameX >= config.width / 2) {
-      return false;
-    }
-    e.preventDefault();
-    registerGunnerShootPointer(e.pointerId, side);
-    try {
-      canvas.setPointerCapture(e.pointerId);
-    } catch (_) { /* ignore */ }
-    return true;
+  function syncGunnerAimFacing(actor) {
+    if (!gunnerMode || !actor || actor.state !== 'alive') return;
+    const ang = ensureGunnerAimAngle(actor);
+    if (Math.cos(ang) > 0.15) actor.facing = 1;
+    else if (Math.cos(ang) < -0.15) actor.facing = -1;
   }
 
   /** 天使随从包围盒（略大于玩家，便于放大绘制精灵） */
@@ -3279,6 +3317,7 @@ let deathSpriteP2 = null;
     gunShootDuration: 360,
     gunnerShootCd: 0,
     gunnerShootOnlyAnim: false,
+    gunnerAimAngle: 0,
     coopFriendlyLastHitAttackId: -1,
     /** 神迹状态（G / 左下条）：每人独立，互不干扰 */
     godRageActive: false,
@@ -3346,6 +3385,7 @@ let deathSpriteP2 = null;
     coopFriendlyLastHitAttackId: -1,
     gunnerShootCd: 0,
     gunnerShootOnlyAnim: false,
+    gunnerAimAngle: 0,
     godRageActive: false,
     godThorMoveActive: false,
     godDemonFlyRemain: 0,
@@ -3653,9 +3693,6 @@ let deathSpriteP2 = null;
       godSkillPressingPointers.clear();
       godPointerIdsP1.clear();
       godPointerIdsP2.clear();
-      gunnerShootPointersP1.clear();
-      gunnerShootPointersP2.clear();
-      gunnerShootPointerSide.clear();
       e.preventDefault();
       return;
     }
@@ -3719,11 +3756,17 @@ let deathSpriteP2 = null;
   function hudRectHit(px, py, rect) {
     return px >= rect.x && py >= rect.y && px <= rect.x + rect.w && py <= rect.y + rect.h;
   }
+  canvas.addEventListener('pointermove', (e) => {
+    if (gameState !== 'playing' || !gunnerMode) return;
+    const { x, y } = canvasToGameHud(e.clientX, e.clientY);
+    updateGunnerAimFromPointer(x, y);
+  }, { passive: true });
   canvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'playing') return;
     if (!(player.state === 'alive' || (isCoopMode && player2.state === 'alive'))) return;
     const { x, y } = canvasToGameHud(e.clientX, e.clientY);
-    if (tryStartGunnerShootFromPointer(e, x, y)) return;
+    const t = performance.now() / 1000;
+    if (tryFireGunnerOnPointerDown(e, x, y, t)) return;
     if (useExternalTouchHud) return;
     const R = getGameplayHudRects();
     if (!isVersusMode && hudRectHit(x, y, R.god)) {
@@ -3766,7 +3809,6 @@ let deathSpriteP2 = null;
     godSkillPressingPointers.delete(e.pointerId);
     godPointerIdsP1.delete(e.pointerId);
     godPointerIdsP2.delete(e.pointerId);
-    releaseGunnerShootPointer(e.pointerId);
     const code = hudPointerKeyHold.get(e.pointerId);
     if (code) {
       keys[code] = false;
@@ -6287,8 +6329,15 @@ let deathSpriteP2 = null;
     for (let i = playerBullets.length - 1; i >= 0; i--) {
       const b = playerBullets[i];
       b.x += b.vx * dt;
+      b.y += (b.vy || 0) * dt;
       b.life -= dt;
-      if (b.life <= 0 || b.x < -40 || b.x > config.width + 40) {
+      if (
+        b.life <= 0 ||
+        b.x < -40 ||
+        b.x > config.width + 40 ||
+        b.y < -60 ||
+        b.y > config.height + 40
+      ) {
         playerBullets.splice(i, 1);
         continue;
       }
@@ -6324,9 +6373,7 @@ let deathSpriteP2 = null;
         const bulletDmg = getGunnerBulletDamageForEnemy(enemy, hitZone || 'body');
         enemy.hp = Math.max(0, enemy.hp - bulletDmg);
         if (hitZone === 'head') {
-          const lockSec = GunnerHeadshotSfx.playAndLock(t);
-          const owner = b.owner || player;
-          owner.gunnerShootCd = Math.max(owner.gunnerShootCd || 0, lockSec);
+          GunnerHeadshotSfx.play();
         }
         if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
@@ -6342,7 +6389,7 @@ let deathSpriteP2 = null;
             );
           }
         }
-        enemy.vx += b.facing * 180;
+        enemy.vx += (Math.sign(b.vx || b.facing || 1)) * 180;
         enemy.vy -= 70;
         enemy.hurtEnd = Math.max(enemy.hurtEnd || 0, t + 0.08);
         playerBullets.splice(i, 1);
@@ -7667,10 +7714,6 @@ let deathSpriteP2 = null;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
     gunFireEffects.length = 0;
-    gunnerShootPointersP1.clear();
-    gunnerShootPointersP2.clear();
-    gunnerShootPointerSide.clear();
-    gunnerHeadshotLockUntil = 0;
     godSkillKeyHeld = false;
     godSkillKeyHeldP2 = false;
     godSkillPressingPointers.clear();
@@ -7713,6 +7756,7 @@ let deathSpriteP2 = null;
     player.knockbackEnd = 0;
     player.gunnerShootCd = 0;
     player.gunnerShootOnlyAnim = false;
+    player.gunnerAimAngle = defaultGunnerAimAngle(player);
     player.isBlocking = false;
     player.blockFlashTimer = 0;
     player.blockShakeTimer = 0;
@@ -7737,6 +7781,7 @@ let deathSpriteP2 = null;
     player2.knockbackEnd = 0;
     player2.gunnerShootCd = 0;
     player2.gunnerShootOnlyAnim = false;
+    player2.gunnerAimAngle = defaultGunnerAimAngle(player2);
     player2.blockFlashTimer = 0;
     player2.blockShakeTimer = 0;
     player2.shieldGoldTimer = 0;
@@ -9253,6 +9298,10 @@ let deathSpriteP2 = null;
 
     drawGodTierHaloAboveActor(ctx, player, t);
     if (isCoopMode) drawGodTierHaloAboveActor(ctx, player2, t);
+    if (gunnerMode && !isVersusMode) {
+      if (player.state === 'alive') drawGunnerAimLine(ctx, player);
+      if (isCoopMode && player2.state === 'alive') drawGunnerAimLine(ctx, player2);
+    }
 
     // 格挡能量护盾（多层科幻效果）
     if (player.isBlocking && player.state === 'alive') {
@@ -9772,12 +9821,12 @@ let deathSpriteP2 = null;
 
     for (const b of playerBullets) {
       ctx.save();
-      const dir = b.facing || 1;
+      const ang = Math.atan2(b.vy || 0, b.vx || b.facing || 1);
       if (gunBulletSprite.complete && gunBulletSprite.naturalWidth > 0) {
         const bw = 16;
         const bh = 8;
         ctx.translate(b.x, b.y);
-        if (dir < 0) ctx.scale(-1, 1);
+        ctx.rotate(ang);
         ctx.drawImage(gunBulletSprite, -bw / 2, -bh / 2, bw, bh);
       } else {
         ctx.fillStyle = '#ff3344';
