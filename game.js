@@ -224,6 +224,15 @@
   const gunBulletSprite = new Image();
   gunBulletSprite.src = 'assets/sprites/Character/gun/BULLET/Gun-bullet_Bullet.png';
 
+  /** 枪客爆头：火星溅射（2 行 × 4 列，共 8 帧） */
+  const headshotSparkSprite = new Image();
+  headshotSparkSprite.src = 'assets/effects/gunner-headshot-sparks.png';
+  const HEADSHOT_SPARK_COLS = 4;
+  const HEADSHOT_SPARK_ROWS = 2;
+  const HEADSHOT_SPARK_FRAMES = 8;
+  const HEADSHOT_SPARK_FRAME_MS = 55;
+  const headshotSparkEffects = [];
+
   const bleedFrameMs = 120; // 每帧 120ms
   const bleedShotFrames = [3, 3]; // shot_1 / shot_2 都是 Sheet3
 
@@ -1692,6 +1701,60 @@ let deathSpriteP2 = null;
       } catch (_) { /* ignore */ }
     },
   };
+
+  function spawnGunnerHeadshotSpark(x, y) {
+    headshotSparkEffects.push({
+      x,
+      y,
+      frame: 0,
+      frameTimer: 0,
+      frameMs: HEADSHOT_SPARK_FRAME_MS,
+    });
+  }
+
+  function updateHeadshotSparkEffects(dt) {
+    for (let i = headshotSparkEffects.length - 1; i >= 0; i--) {
+      const e = headshotSparkEffects[i];
+      e.frameTimer += dt * 1000;
+      while (e.frameTimer >= e.frameMs) {
+        e.frameTimer -= e.frameMs;
+        e.frame += 1;
+        if (e.frame >= HEADSHOT_SPARK_FRAMES) {
+          headshotSparkEffects.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  function drawHeadshotSparkEffects(ctx) {
+    const img = headshotSparkSprite;
+    if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+    const fw = Math.floor(img.naturalWidth / HEADSHOT_SPARK_COLS);
+    const fh = Math.floor(img.naturalHeight / HEADSHOT_SPARK_ROWS);
+    const drawW = fw * 0.38;
+    const drawH = fh * 0.38;
+    for (const e of headshotSparkEffects) {
+      const col = e.frame % HEADSHOT_SPARK_COLS;
+      const row = Math.floor(e.frame / HEADSHOT_SPARK_COLS);
+      const sx = col * fw;
+      const sy = row * fh;
+      ctx.save();
+      ctx.globalAlpha = 0.96;
+      ctx.drawImage(
+        img,
+        sx,
+        sy,
+        fw,
+        fh,
+        Math.round(e.x - drawW / 2),
+        Math.round(e.y - drawH * 0.82),
+        drawW,
+        drawH
+      );
+      ctx.restore();
+    }
+  }
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
   let godSkillKeyHeld = false;
   /** 双人 P2：C 键按住（外部神技条按下态） */
@@ -1758,6 +1821,7 @@ let deathSpriteP2 = null;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
     gunFireEffects.length = 0;
+    headshotSparkEffects.length = 0;
   }
 
   function getGunnerMuzzlePos(actor) {
@@ -6339,6 +6403,7 @@ let deathSpriteP2 = null;
         enemy.hp = Math.max(0, enemy.hp - bulletDmg);
         if (hitZone === 'head') {
           GunnerHeadshotSfx.play();
+          spawnGunnerHeadshotSpark(flashX, flashY);
         }
         if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
@@ -7691,6 +7756,7 @@ let deathSpriteP2 = null;
     hitParticles.length = 0;
     bloodStains.length = 0;
     bleedEffects.length = 0;
+    headshotSparkEffects.length = 0;
     perfectBlockParticles.length = 0;
     dodgeAfterimages.length = 0;
     bossAoes.length = 0;
@@ -8107,6 +8173,7 @@ let deathSpriteP2 = null;
     updateRoninFootTrail(dt, t);
     updateGunnerShooting(dt, t);
     updatePlayerBullets(dt, t);
+    updateHeadshotSparkEffects(dt);
     syncPlayerAnimAction(t);
 
     if (player.hp <= 0 && player.state !== 'dead') {
@@ -9017,6 +9084,8 @@ let deathSpriteP2 = null;
       ctx.drawImage(img, sx, 0, sw, sh, -dw / 2, -dh, dw, dh);
       ctx.restore();
     }
+
+    drawHeadshotSparkEffects(ctx);
 
     const t = performance.now() / 1000;
 
