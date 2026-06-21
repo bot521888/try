@@ -1662,6 +1662,156 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 920;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
+
+  /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
+  const TRACER_SPARK_PALETTE = ['#fffdf0', '#ffe27a', '#ffb028', '#ff7a1a', '#8a2010'];
+
+  class TracerTrailSpark {
+    constructor(x, y, ux, uy, spread) {
+      this.x = x;
+      this.y = y;
+      this.px = x;
+      this.py = y;
+      const spd = 0.5 + Math.random() * 1.5;
+      const px = -uy;
+      const py = ux;
+      const jitter = (Math.random() - 0.5) * spread;
+      this.vx = -ux * spd + px * jitter * 0.22;
+      this.vy = -uy * spd + py * jitter * 0.22;
+      this.life = 1;
+      this.decay = 0.08 + Math.random() * 0.08;
+      this.size = 0.6 + Math.random() * 1.4;
+      this.color = TRACER_SPARK_PALETTE[(Math.random() * TRACER_SPARK_PALETTE.length) | 0];
+    }
+    update(dt) {
+      const f = dt * 60;
+      this.px = this.x;
+      this.py = this.y;
+      this.vy *= Math.pow(0.9, f);
+      this.vx *= Math.pow(0.92, f);
+      this.x += this.vx * f;
+      this.y += this.vy * f;
+      this.life -= this.decay * f;
+    }
+    draw(ctx) {
+      if (this.life <= 0) return;
+      ctx.globalAlpha = Math.max(0, this.life);
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.size * this.life;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(this.px, this.py);
+      ctx.lineTo(this.x, this.y);
+      ctx.stroke();
+    }
+  }
+
+  class GunnerBulletTrail {
+    constructor(vx, vy, opt = {}) {
+      const len = Math.hypot(vx, vy) || 1;
+      this.ux = vx / len;
+      this.uy = vy / len;
+      this.trail = opt.trail ?? 10;
+      this.density = opt.density ?? 5;
+      this.spread = opt.spread ?? 3.5;
+      this.sparks = [];
+      this.stopEmit = false;
+    }
+    emit(x, y, movedDist) {
+      if (this.stopEmit || movedDist <= 0) return;
+      for (let i = 0; i < this.density; i++) {
+        const back = -Math.random() * movedDist;
+        const sx = x + this.ux * back;
+        const sy = y + this.uy * back;
+        const s = new TracerTrailSpark(sx, sy, this.ux, this.uy, this.spread);
+        s.decay *= 12 / Math.max(this.trail, 1);
+        this.sparks.push(s);
+      }
+    }
+    update(dt) {
+      for (const s of this.sparks) s.update(dt);
+      this.sparks = this.sparks.filter((s) => s.life > 0);
+    }
+    draw(ctx) {
+      if (!this.sparks.length) return;
+      const prev = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'lighter';
+      for (const s of this.sparks) s.draw(ctx);
+      ctx.globalCompositeOperation = prev;
+      ctx.globalAlpha = 1;
+    }
+    get empty() {
+      return this.sparks.length === 0;
+    }
+  }
+
+  function createGunnerBulletTrail(vx, vy) {
+    return new GunnerBulletTrail(vx, vy, { trail: 10, density: 6, spread: 4 });
+  }
+
+  function orphanGunnerBulletTrail(trail) {
+    if (!trail) return;
+    trail.stopEmit = true;
+    if (!trail.empty) gunnerBulletTrailRemnants.push(trail);
+  }
+
+  function drawGunnerBulletTracerHead(ctx, b) {
+    const vx = b.vx || 0;
+    const vy = b.vy || 0;
+    const len = Math.hypot(vx, vy) || 1;
+    const ux = vx / len;
+    const uy = vy / len;
+    const x = b.x;
+    const y = b.y;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const streakLen = 16;
+    const g = ctx.createLinearGradient(
+      x - ux * streakLen,
+      y - uy * streakLen,
+      x + ux * 5,
+      y + uy * 5
+    );
+    g.addColorStop(0, 'rgba(138, 32, 16, 0)');
+    g.addColorStop(0.25, 'rgba(255, 122, 26, 0.45)');
+    g.addColorStop(0.55, 'rgba(255, 176, 40, 0.75)');
+    g.addColorStop(0.82, 'rgba(255, 226, 122, 0.92)');
+    g.addColorStop(1, 'rgba(255, 255, 250, 1)');
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - ux * streakLen, y - uy * streakLen);
+    ctx.lineTo(x + ux * 2.5, y + uy * 2.5);
+    ctx.stroke();
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, 9);
+    rg.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    rg.addColorStop(0.28, 'rgba(255, 226, 122, 0.92)');
+    rg.addColorStop(0.58, 'rgba(255, 176, 40, 0.5)');
+    rg.addColorStop(0.82, 'rgba(255, 122, 26, 0.22)');
+    rg.addColorStop(1, 'rgba(138, 32, 16, 0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function updateGunnerBulletTrailRemnants(dt) {
+    for (let i = gunnerBulletTrailRemnants.length - 1; i >= 0; i--) {
+      gunnerBulletTrailRemnants[i].update(dt);
+      if (gunnerBulletTrailRemnants[i].empty) gunnerBulletTrailRemnants.splice(i, 1);
+    }
+  }
+
+  function drawGunnerBulletTracers(ctx) {
+    if (!playerBullets.length && !gunnerBulletTrailRemnants.length) return;
+    for (const b of playerBullets) {
+      if (b.trail) b.trail.draw(ctx);
+    }
+    for (const tr of gunnerBulletTrailRemnants) tr.draw(ctx);
+    for (const b of playerBullets) drawGunnerBulletTracerHead(ctx, b);
+  }
   const GunnerHeadshotSfx = {
     el: null,
     durationSec: 0.45,
@@ -1757,6 +1907,7 @@ let deathSpriteP2 = null;
     roninFootTrailParticles.length = 0;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
+    gunnerBulletTrailRemnants.length = 0;
     gunFireEffects.length = 0;
   }
 
@@ -1856,6 +2007,7 @@ let deathSpriteP2 = null;
       facing: Math.sign(Math.cos(ang)) || actor.facing || 1,
       life: 3.2,
       owner: actor,
+      trail: createGunnerBulletTrail(Math.cos(ang) * spd, Math.sin(ang) * spd),
     });
     actor.gunnerShootOnlyAnim = true;
     actor.attackStart = t;
@@ -3373,6 +3525,8 @@ let deathSpriteP2 = null;
   const bloodStains = [];
   const bleedEffects = []; // 敌人被打中流血动画（shot sprites）
   const playerBullets = [];
+  /** 子弹消失后残留的曳光火星，自然衰减完毕再删 */
+  const gunnerBulletTrailRemnants = [];
   const gunFireEffects = [];
   const dodgeAfterimages = [];
   const shieldParticles = [];
@@ -6293,8 +6447,15 @@ let deathSpriteP2 = null;
   function updatePlayerBullets(dt, t) {
     for (let i = playerBullets.length - 1; i >= 0; i--) {
       const b = playerBullets[i];
+      const prevX = b.x;
+      const prevY = b.y;
       b.x += b.vx * dt;
       b.y += (b.vy || 0) * dt;
+      const movedDist = Math.hypot(b.x - prevX, b.y - prevY);
+      if (b.trail) {
+        b.trail.emit(b.x, b.y, movedDist);
+        b.trail.update(dt);
+      }
       b.life -= dt;
       if (
         b.life <= 0 ||
@@ -6303,6 +6464,8 @@ let deathSpriteP2 = null;
         b.y < -60 ||
         b.y > config.height + 40
       ) {
+        orphanGunnerBulletTrail(b.trail);
+        b.trail = null;
         playerBullets.splice(i, 1);
         continue;
       }
@@ -6357,10 +6520,14 @@ let deathSpriteP2 = null;
         enemy.vx += (Math.sign(b.vx || b.facing || 1)) * 180;
         enemy.vy -= 70;
         enemy.hurtEnd = Math.max(enemy.hurtEnd || 0, t + 0.08);
+        orphanGunnerBulletTrail(b.trail);
+        b.trail = null;
         playerBullets.splice(i, 1);
         break;
       }
     }
+
+    updateGunnerBulletTrailRemnants(dt);
 
     for (let i = gunFireEffects.length - 1; i >= 0; i--) {
       const f = gunFireEffects[i];
@@ -6969,6 +7136,7 @@ let deathSpriteP2 = null;
         bumpEnemyClearRankAfterFinale();
         endlessCombatStack = Math.min(10, endlessCombatStack + 1);
         playerBullets.length = 0;
+        gunnerBulletTrailRemnants.length = 0;
         projectiles.length = 0;
         angelMinionBolts.length = 0;
         bossAoes.length = 0;
@@ -7678,6 +7846,7 @@ let deathSpriteP2 = null;
     roninFootTrailParticles.length = 0;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
+    gunnerBulletTrailRemnants.length = 0;
     gunFireEffects.length = 0;
     godSkillKeyHeld = false;
     godSkillKeyHeldP2 = false;
@@ -9780,25 +9949,7 @@ let deathSpriteP2 = null;
       ctx.restore();
     }
 
-    for (const b of playerBullets) {
-      ctx.save();
-      const ang = Math.atan2(b.vy || 0, b.vx || b.facing || 1);
-      if (gunBulletSprite.complete && gunBulletSprite.naturalWidth > 0) {
-        const bw = 16;
-        const bh = 8;
-        ctx.translate(b.x, b.y);
-        ctx.rotate(ang);
-        ctx.drawImage(gunBulletSprite, -bw / 2, -bh / 2, bw, bh);
-      } else {
-        ctx.fillStyle = '#ff3344';
-        ctx.shadowColor = 'rgba(255, 40, 50, 0.85)';
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
+    drawGunnerBulletTracers(ctx);
 
     for (const b of berserkerDeathBeams) {
       const a = Math.max(0, b.life / (b.maxLife || 0.58));
