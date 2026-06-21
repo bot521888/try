@@ -1660,7 +1660,7 @@ let deathSpriteP2 = null;
   /** 冥焰枪客：瞄准用（pointermove 更新角度，pointerdown 点射） */
   const GUNNER_BULLET_HITS_TO_KILL = 4;
   const GUNNER_SHOOT_INTERVAL = 0.2;
-  const GUNNER_BULLET_SPEED = 920;
+  const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
 
   /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
@@ -1812,6 +1812,138 @@ let deathSpriteP2 = null;
     for (const tr of gunnerBulletTrailRemnants) tr.draw(ctx);
     for (const b of playerBullets) drawGunnerBulletTracerHead(ctx, b);
   }
+
+  /** 爆头命中：一次性放射火星 + 中心闪光环（Canvas 2D / lighter） */
+  const HEADSHOT_BURST_PALETTES = {
+    gold: ['#fffdf0', '#ffe27a', '#ffb028', '#ff7a1a', '#8a2010'],
+    orange: ['#fff2e0', '#ffb060', '#ff6a1f', '#d83a10'],
+    white: ['#ffffff', '#dfe8ff', '#aebfff', '#7f93ff'],
+  };
+
+  class HeadshotBurstSpark {
+    constructor(x, y, angle, speed, palette, gravity) {
+      this.x = x;
+      this.y = y;
+      this.px = x;
+      this.py = y;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.gravity = gravity;
+      this.drag = 0.86 + Math.random() * 0.06;
+      this.life = 1;
+      this.decay = 0.018 + Math.random() * 0.03;
+      this.size = 0.8 + Math.random() * 1.6;
+      this.color = palette[(Math.random() * palette.length) | 0];
+    }
+    update(dt) {
+      const f = dt * 60;
+      this.px = this.x;
+      this.py = this.y;
+      this.vx *= Math.pow(this.drag, f);
+      this.vy *= Math.pow(this.drag, f);
+      this.vy += this.gravity * f;
+      this.x += this.vx * f;
+      this.y += this.vy * f;
+      this.life -= this.decay * f;
+    }
+    draw(ctx) {
+      if (this.life <= 0) return;
+      ctx.globalAlpha = Math.max(0, this.life);
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.size * this.life;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(this.px, this.py);
+      ctx.lineTo(this.x, this.y);
+      ctx.stroke();
+    }
+  }
+
+  class HeadshotBurst {
+    constructor(x, y, opt = {}) {
+      const count = opt.count ?? 34;
+      const speed = opt.speed ?? 8;
+      const spread = ((opt.spread ?? 360) * Math.PI) / 180;
+      const gravity = opt.gravity ?? 14;
+      const palette = HEADSHOT_BURST_PALETTES[opt.style] || HEADSHOT_BURST_PALETTES.gold;
+      const baseAng = opt.dir ?? -Math.PI / 2;
+      this.sparks = [];
+      for (let i = 0; i < count; i++) {
+        const a = baseAng + (Math.random() - 0.5) * spread;
+        const sp = speed * (0.35 + Math.random() * 0.9);
+        this.sparks.push(new HeadshotBurstSpark(x, y, a, sp, palette, gravity));
+      }
+      this.flash = { x, y, r: 2, life: 1, color: palette[0] };
+    }
+    update(dt) {
+      const f = dt * 60;
+      if (this.flash.life > 0) {
+        this.flash.r += 4 * f;
+        this.flash.life -= 0.08 * f;
+      }
+      for (const s of this.sparks) s.update(dt);
+      this.sparks = this.sparks.filter((s) => s.life > 0);
+    }
+    draw(ctx) {
+      const prev = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'lighter';
+      if (this.flash.life > 0) {
+        ctx.globalAlpha = Math.max(0, this.flash.life) * 0.8;
+        const g = ctx.createRadialGradient(
+          this.flash.x,
+          this.flash.y,
+          0,
+          this.flash.x,
+          this.flash.y,
+          this.flash.r + 8
+        );
+        g.addColorStop(0, this.flash.color);
+        g.addColorStop(0.4, 'rgba(255,180,60,0.5)');
+        g.addColorStop(1, 'rgba(255,120,20,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(this.flash.x, this.flash.y, this.flash.r + 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (const s of this.sparks) s.draw(ctx);
+      ctx.globalCompositeOperation = prev;
+      ctx.globalAlpha = 1;
+    }
+    get done() {
+      return this.flash.life <= 0 && this.sparks.length === 0;
+    }
+  }
+
+  function spawnHeadshotBurst(x, y, bulletVx, bulletVy) {
+    let dir = -Math.PI / 2;
+    const vx = bulletVx || 0;
+    const vy = bulletVy || 0;
+    if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01) {
+      dir = Math.atan2(-vy, -vx);
+    }
+    headshotBurstEffects.push(
+      new HeadshotBurst(x, y, {
+        dir,
+        style: 'gold',
+        count: 34,
+        speed: 8,
+        spread: 360,
+        gravity: 14,
+      })
+    );
+  }
+
+  function updateHeadshotBursts(dt) {
+    for (let i = headshotBurstEffects.length - 1; i >= 0; i--) {
+      headshotBurstEffects[i].update(dt);
+      if (headshotBurstEffects[i].done) headshotBurstEffects.splice(i, 1);
+    }
+  }
+
+  function drawHeadshotBursts(ctx) {
+    if (!headshotBurstEffects.length) return;
+    for (const burst of headshotBurstEffects) burst.draw(ctx);
+  }
   const GunnerHeadshotSfx = {
     el: null,
     durationSec: 0.45,
@@ -1908,6 +2040,7 @@ let deathSpriteP2 = null;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
     gunnerBulletTrailRemnants.length = 0;
+    headshotBurstEffects.length = 0;
     gunFireEffects.length = 0;
   }
 
@@ -3527,6 +3660,7 @@ let deathSpriteP2 = null;
   const playerBullets = [];
   /** 子弹消失后残留的曳光火星，自然衰减完毕再删 */
   const gunnerBulletTrailRemnants = [];
+  const headshotBurstEffects = [];
   const gunFireEffects = [];
   const dodgeAfterimages = [];
   const shieldParticles = [];
@@ -6502,6 +6636,7 @@ let deathSpriteP2 = null;
         enemy.hp = Math.max(0, enemy.hp - bulletDmg);
         if (hitZone === 'head') {
           GunnerHeadshotSfx.play();
+          spawnHeadshotBurst(flashX, flashY, b.vx, b.vy);
         }
         if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
@@ -7847,6 +7982,7 @@ let deathSpriteP2 = null;
     roninSwordQi.length = 0;
     playerBullets.length = 0;
     gunnerBulletTrailRemnants.length = 0;
+    headshotBurstEffects.length = 0;
     gunFireEffects.length = 0;
     godSkillKeyHeld = false;
     godSkillKeyHeldP2 = false;
@@ -8276,6 +8412,7 @@ let deathSpriteP2 = null;
     updateRoninFootTrail(dt, t);
     updateGunnerShooting(dt, t);
     updatePlayerBullets(dt, t);
+    updateHeadshotBursts(dt);
     syncPlayerAnimAction(t);
 
     if (player.hp <= 0 && player.state !== 'dead') {
@@ -9950,6 +10087,7 @@ let deathSpriteP2 = null;
     }
 
     drawGunnerBulletTracers(ctx);
+    drawHeadshotBursts(ctx);
 
     for (const b of berserkerDeathBeams) {
       const a = Math.max(0, b.life / (b.maxLife || 0.58));
