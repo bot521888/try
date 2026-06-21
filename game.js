@@ -1659,9 +1659,8 @@ let deathSpriteP2 = null;
   const roninSwordQi = [];
   /** 冥焰枪客：瞄准用（pointermove 更新角度，pointerdown 点射） */
   const GUNNER_BULLET_HITS_TO_KILL = 4;
-  const GUNNER_SHOOT_INTERVAL = 0.5;
+  const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 920;
-  const GUNNER_AIM_LINE_LEN = 300;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
   const GunnerHeadshotSfx = {
     el: null,
@@ -1762,9 +1761,8 @@ let deathSpriteP2 = null;
   }
 
   function getGunnerMuzzlePos(actor) {
-    const dir = actor.facing || 1;
     return {
-      x: actor.x + config.playerWidth / 2 + dir * 20,
+      x: actor.x + config.playerWidth / 2,
       y: actor.y + config.playerHeight * 0.38,
     };
   }
@@ -1783,11 +1781,9 @@ let deathSpriteP2 = null;
   function setGunnerAimFromScreen(actor, gameX, gameY) {
     if (!actor || actor.state !== 'alive') return;
     const m = getGunnerMuzzlePos(actor);
-    let dx = gameX - m.x;
-    let dy = gameY - m.y;
-    const dir = actor.facing || 1;
-    if (dir > 0 && dx < 24) dx = 24;
-    if (dir < 0 && dx > -24) dx = -24;
+    const dx = gameX - m.x;
+    const dy = gameY - m.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
     actor.gunnerAimAngle = Math.atan2(dy, dx);
   }
 
@@ -1832,30 +1828,6 @@ let deathSpriteP2 = null;
     fireGunnerBullet(actor, t);
     actor.gunnerShootCd = GUNNER_SHOOT_INTERVAL;
     return true;
-  }
-
-  function drawGunnerAimLine(ctx, actor) {
-    if (!gunnerMode || !actor || actor.state !== 'alive') return;
-    const ang = ensureGunnerAimAngle(actor);
-    const m = getGunnerMuzzlePos(actor);
-    const tx = m.x + Math.cos(ang) * GUNNER_AIM_LINE_LEN;
-    const ty = m.y + Math.sin(ang) * GUNNER_AIM_LINE_LEN;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255, 55, 65, 0.92)';
-    ctx.lineWidth = 2.2;
-    ctx.setLineDash([8, 6]);
-    ctx.shadowColor = 'rgba(255, 40, 50, 0.55)';
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.moveTo(m.x, m.y);
-    ctx.lineTo(tx, ty);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(255, 90, 100, 0.95)';
-    ctx.beginPath();
-    ctx.arc(tx, ty, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
   }
 
   function getRoninGunnerMeleeMul() {
@@ -1910,13 +1882,6 @@ let deathSpriteP2 = null;
     if (actor.attackStart > 0 && t - actor.attackStart >= dur) {
       actor.gunnerShootOnlyAnim = false;
     }
-  }
-
-  function syncGunnerAimFacing(actor) {
-    if (!gunnerMode || !actor || actor.state !== 'alive') return;
-    const ang = ensureGunnerAimAngle(actor);
-    if (Math.cos(ang) > 0.15) actor.facing = 1;
-    else if (Math.cos(ang) < -0.15) actor.facing = -1;
   }
 
   /** 天使随从包围盒（略大于玩家，便于放大绘制精灵） */
@@ -9298,10 +9263,6 @@ let deathSpriteP2 = null;
 
     drawGodTierHaloAboveActor(ctx, player, t);
     if (isCoopMode) drawGodTierHaloAboveActor(ctx, player2, t);
-    if (gunnerMode && !isVersusMode) {
-      if (player.state === 'alive') drawGunnerAimLine(ctx, player);
-      if (isCoopMode && player2.state === 'alive') drawGunnerAimLine(ctx, player2);
-    }
 
     // 格挡能量护盾（多层科幻效果）
     if (player.isBlocking && player.state === 'alive') {
