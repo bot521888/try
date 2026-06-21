@@ -1743,9 +1743,11 @@ let deathSpriteP2 = null;
     return 1;
   }
 
-  function getGunnerBulletDamageForEnemy(enemy) {
+  function getGunnerBulletDamageForEnemy(enemy, zone = 'body') {
     const maxHp = enemy.maxHp || enemy.hp || 1;
-    return Math.max(1, Math.ceil(maxHp / GUNNER_BULLET_HITS_TO_KILL));
+    const bodyDmg = Math.max(1, Math.ceil(maxHp / GUNNER_BULLET_HITS_TO_KILL));
+    if (zone === 'head') return bodyDmg * 4;
+    return bodyDmg;
   }
 
   function fireGunnerBullet(actor, t) {
@@ -4373,6 +4375,45 @@ let deathSpriteP2 = null;
     };
   }
 
+  /** 冥焰枪客专用：在全身受击箱内切分头 / 身（仅子弹判定使用） */
+  function getEnemyGunnerHeadBodySplit(enemy) {
+    const full = getEnemyHitbox(enemy);
+    const totalH = full.bottom - full.top;
+    const headRatio = enemy.isBoss ? 0.22 : 0.3;
+    const headH = Math.max(10, Math.min(totalH * headRatio, totalH - 12));
+    const splitY = full.top + headH;
+    return {
+      head: {
+        left: full.left,
+        right: full.right,
+        top: full.top,
+        bottom: splitY,
+      },
+      body: {
+        left: full.left,
+        right: full.right,
+        top: splitY,
+        bottom: full.bottom,
+      },
+    };
+  }
+
+  function getEnemyHeadHitbox(enemy) {
+    return getEnemyGunnerHeadBodySplit(enemy).head;
+  }
+
+  function getEnemyBodyHitbox(enemy) {
+    return getEnemyGunnerHeadBodySplit(enemy).body;
+  }
+
+  /** 子弹 vs 敌人：枪客模式下优先判定头部 */
+  function getGunnerBulletHitZone(bBox, enemy) {
+    const { head, body } = getEnemyGunnerHeadBodySplit(enemy);
+    if (boxesOverlap(bBox, head)) return 'head';
+    if (boxesOverlap(bBox, body)) return 'body';
+    return null;
+  }
+
   // 玩家攻击判定（HIT BOX）——始终紧贴 HEART BOX 左/右侧
   function getPlayerAttackBox() {
     // 一键修复：普通拳范围约 100，超级拳约 130（留出躲避空间）
@@ -6210,17 +6251,32 @@ let deathSpriteP2 = null;
       for (const enemy of enemies) {
         if (enemy.hp <= 0) continue;
         if (enemy.invulnerableUntil && t < enemy.invulnerableUntil) continue;
-        const eBox = getEnemyHitbox(enemy);
         const r = 4;
         const bBox = { left: b.x - r, right: b.x + r, top: b.y - r, bottom: b.y + r };
-        if (!boxesOverlap(bBox, eBox)) continue;
+        const hitZone = gunnerMode ? getGunnerBulletHitZone(bBox, enemy) : null;
+        if (gunnerMode) {
+          if (!hitZone) continue;
+        } else {
+          const eBox = getEnemyHitbox(enemy);
+          if (!boxesOverlap(bBox, eBox)) continue;
+        }
 
-        const cx = enemy.x + enemy.width / 2;
-        const cy = enemy.y + enemy.height / 2;
-        hitFlashEffects.push({ x: cx, y: cy, startTime: t, duration: 0.06 });
+        const headBox = gunnerMode ? getEnemyHeadHitbox(enemy) : null;
+        const flashX = hitZone === 'head' && headBox
+          ? (headBox.left + headBox.right) / 2
+          : enemy.x + enemy.width / 2;
+        const flashY = hitZone === 'head' && headBox
+          ? (headBox.top + headBox.bottom) / 2
+          : enemy.y + enemy.height / 2;
+        hitFlashEffects.push({
+          x: flashX,
+          y: flashY,
+          startTime: t,
+          duration: hitZone === 'head' ? 0.1 : 0.06,
+        });
 
         const hpBeforeBullet = enemy.hp;
-        const bulletDmg = getGunnerBulletDamageForEnemy(enemy);
+        const bulletDmg = getGunnerBulletDamageForEnemy(enemy, hitZone || 'body');
         enemy.hp = Math.max(0, enemy.hp - bulletDmg);
         if ((berserkerMode || angelMode || demonMode || thorMode || roninMode || gunnerMode) && hpBeforeBullet > 0 && enemy.hp <= 0) {
           spawnBerserkerKillGoldBeam(enemy);
@@ -9590,10 +9646,21 @@ let deathSpriteP2 = null;
         }
       }
       if (DEBUG_HITBOX) {
-        const hb = getEnemyHitbox(enemy);
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(hb.left, hb.top, hb.right - hb.left, hb.bottom - hb.top);
+        if (gunnerMode) {
+          const headHb = getEnemyHeadHitbox(enemy);
+          const bodyHb = getEnemyBodyHitbox(enemy);
+          ctx.strokeStyle = '#ff8800';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(headHb.left, headHb.top, headHb.right - headHb.left, headHb.bottom - headHb.top);
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bodyHb.left, bodyHb.top, bodyHb.right - bodyHb.left, bodyHb.bottom - bodyHb.top);
+        } else {
+          const hb = getEnemyHitbox(enemy);
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(hb.left, hb.top, hb.right - hb.left, hb.bottom - hb.top);
+        }
       }
       if (enemy.type === 'charge' && enemy.state === 'windup') {
         ctx.fillStyle = '#fef08a';
