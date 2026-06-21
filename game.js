@@ -2158,7 +2158,6 @@ let deathSpriteP2 = null;
 
   function fireGunnerBullet(actor, t) {
     if (!gunnerMode || !actor || actor.state !== 'alive' || isVersusMode) return;
-    playGunnerShootSound();
     const ang = ensureGunnerAimAngle(actor);
     const spd = GUNNER_BULLET_SPEED;
     const m = getGunnerMuzzlePos(actor);
@@ -3096,62 +3095,6 @@ let deathSpriteP2 = null;
   function ensureAudio() {
     if (!BGM.ctx) BGM.ctx = new (window.AudioContext || window.webkitAudioContext)();
     return BGM.ctx;
-  }
-  /** 程序化枪声：无需加载 mp3，点击即响 */
-  function playGunnerShootSound() {
-    const ctx = ensureAudio();
-    if (ctx.state === 'suspended') void ctx.resume();
-    const t = ctx.currentTime;
-    const pitch = 0.9 + Math.random() * 0.18;
-    const out = ctx.createGain();
-    out.gain.value = 0.22;
-    out.connect(ctx.destination);
-
-    const body = ctx.createOscillator();
-    const bodyG = ctx.createGain();
-    body.type = 'sine';
-    body.frequency.setValueAtTime(158 * pitch, t);
-    body.frequency.exponentialRampToValueAtTime(48, t + 0.05);
-    bodyG.gain.setValueAtTime(0.42, t);
-    bodyG.gain.exponentialRampToValueAtTime(0.001, t + 0.075);
-    body.connect(bodyG);
-    bodyG.connect(out);
-    body.start(t);
-    body.stop(t + 0.08);
-
-    const snap = ctx.createOscillator();
-    const snapG = ctx.createGain();
-    snap.type = 'square';
-    snap.frequency.setValueAtTime(920 * pitch, t);
-    snap.frequency.exponentialRampToValueAtTime(220, t + 0.018);
-    snapG.gain.setValueAtTime(0.08, t);
-    snapG.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
-    snap.connect(snapG);
-    snapG.connect(out);
-    snap.start(t);
-    snap.stop(t + 0.04);
-
-    const dur = 0.06;
-    const bufSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
-    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / bufSize * 9);
-    }
-    const ns = ctx.createBufferSource();
-    ns.buffer = buf;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(2400 * pitch, t);
-    bp.Q.setValueAtTime(0.65, t);
-    const nsG = ctx.createGain();
-    nsG.gain.setValueAtTime(0.62, t);
-    nsG.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    ns.connect(bp);
-    bp.connect(nsG);
-    nsG.connect(out);
-    ns.start(t);
-    ns.stop(t + dur + 0.01);
   }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
