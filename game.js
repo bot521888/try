@@ -1662,9 +1662,7 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
-  const GUNNER_SHOOT_MP3_URL = 'vystrel-vystrel-ak47.mp3';
   const GUNNER_HEADSHOT_VOLUME = 0.25;
-  const GUNNER_SHOOT_VOLUME = 0.35;
 
   /** 跳过 MP3 文件开头的静音，减少「点了才响」的体感延迟 */
   function sfxFindAttackOffset(audioBuffer, scanSec = 0.18, threshold = 0.025) {
@@ -2000,116 +1998,6 @@ let deathSpriteP2 = null;
       void this.ensureLoad();
     },
   };
-  const GunnerShootSfx = {
-    buffer: null,
-    gain: null,
-    startOffset: 0,
-    loadPromise: null,
-    pool: [],
-    poolIdx: 0,
-    poolPrimed: false,
-    volume: GUNNER_SHOOT_VOLUME,
-    initPool() {
-      if (this.pool.length) return;
-      for (let i = 0; i < 8; i++) {
-        const a = new Audio(GUNNER_SHOOT_MP3_URL);
-        a.preload = 'auto';
-        a.volume = this.volume;
-        const slot = { el: a, ready: false };
-        a.addEventListener(
-          'canplaythrough',
-          () => {
-            slot.ready = true;
-          },
-          { once: true }
-        );
-        void a.load();
-        this.pool.push(slot);
-      }
-    },
-    ensureLoad() {
-      this.initPool();
-      if (this.loadPromise) return this.loadPromise;
-      this.loadPromise = (async () => {
-        try {
-          const ctx = ensureAudio();
-          if (ctx.state === 'suspended') await ctx.resume();
-          const res = await fetch(GUNNER_SHOOT_MP3_URL);
-          if (!res.ok) return;
-          const raw = await res.arrayBuffer();
-          this.buffer = await ctx.decodeAudioData(raw);
-          this.startOffset = sfxFindAttackOffset(this.buffer);
-          if (!this.gain) {
-            this.gain = ctx.createGain();
-            this.gain.gain.value = this.volume;
-            this.gain.connect(ctx.destination);
-          }
-        } catch (_) { /* ignore */ }
-      })();
-      return this.loadPromise;
-    },
-    /** 在用户手势里立刻唤醒 AudioContext 并预载，减少第一枪延迟 */
-    warmOnUserGesture() {
-      this.initPool();
-      const ctx = ensureAudio();
-      if (ctx.state === 'suspended') void ctx.resume();
-      void this.ensureLoad();
-      if (this.poolPrimed) return;
-      this.poolPrimed = true;
-      for (const slot of this.pool) {
-        const a = slot.el;
-        const vol = a.volume;
-        a.volume = 0.001;
-        const p = a.play();
-        if (p && p.then) {
-          p.then(() => {
-            a.pause();
-            a.currentTime = 0;
-            a.volume = vol;
-            slot.ready = true;
-          }).catch(() => {
-            a.volume = vol;
-          });
-        } else {
-          a.volume = vol;
-        }
-      }
-    },
-    play() {
-      try {
-        const ctx = ensureAudio();
-        if (ctx.state === 'suspended') void ctx.resume();
-        if (this.buffer) {
-          const source = ctx.createBufferSource();
-          source.buffer = this.buffer;
-          if (!this.gain) {
-            this.gain = ctx.createGain();
-            this.gain.gain.value = this.volume;
-            this.gain.connect(ctx.destination);
-          }
-          source.connect(this.gain);
-          source.start(0, this.startOffset || 0);
-          return;
-        }
-      } catch (_) { /* fall through */ }
-      this.initPool();
-      if (!this.pool.length) {
-        void this.ensureLoad();
-        return;
-      }
-      for (let i = 0; i < this.pool.length; i++) {
-        const slot = this.pool[(this.poolIdx + i) % this.pool.length];
-        const a = slot.el;
-        try {
-          a.pause();
-          a.currentTime = 0;
-          void a.play();
-          this.poolIdx = (this.poolIdx + i + 1) % this.pool.length;
-          return;
-        } catch (_) { /* try next */ }
-      }
-    },
-  };
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
   let godSkillKeyHeld = false;
   /** 双人 P2：C 键按住（外部神技条按下态） */
@@ -2231,13 +2119,11 @@ let deathSpriteP2 = null;
 
   function prepGunnerCombatAudio() {
     if (!gunnerMode) return;
-    GunnerShootSfx.warmOnUserGesture();
     void GunnerHeadshotSfx.ensureLoad();
   }
 
   function updateGunnerAimFromPointer(gameX, gameY) {
     if (!gunnerMode || isVersusMode || gameState !== 'playing') return;
-    GunnerShootSfx.warmOnUserGesture();
     if (isGunnerHudPointer(gameX, gameY)) return;
     const actor = pickGunnerActorFromScreenX(gameX);
     if (!actor) return;
@@ -2251,8 +2137,6 @@ let deathSpriteP2 = null;
     if (!actor) return false;
     if ((actor.gunnerShootCd || 0) > 0) return true;
     e.preventDefault();
-    GunnerShootSfx.warmOnUserGesture();
-    GunnerShootSfx.play();
     setGunnerAimFromScreen(actor, gameX, gameY);
     fireGunnerBullet(actor, t);
     actor.gunnerShootCd = GUNNER_SHOOT_INTERVAL;
@@ -3214,11 +3098,9 @@ let deathSpriteP2 = null;
   }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
-    GunnerShootSfx.ensureLoad();
     BGM.start();
     ambientStarted = true;
   }
-  void GunnerShootSfx.ensureLoad();
   void GunnerHeadshotSfx.ensureLoad();
   function triggerBossPhase2Music() {
     const ctx = ensureAudio();
@@ -4050,7 +3932,6 @@ let deathSpriteP2 = null;
       thorMode = true;
       roninMode = true;
       gunnerMode = true;
-      GunnerShootSfx.warmOnUserGesture();
       if (!already) syncPlayerHpCapAndFill();
       return;
     }
@@ -4169,7 +4050,6 @@ let deathSpriteP2 = null;
   canvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'playing') return;
     if (!(player.state === 'alive' || (isCoopMode && player2.state === 'alive'))) return;
-    GunnerShootSfx.warmOnUserGesture();
     const settlementUiOpen =
       settlementOverlay && !settlementOverlay.classList.contains('hidden');
     if (!ambientStarted && !settlementUiOpen) startAmbientLoop();
@@ -4295,9 +4175,6 @@ let deathSpriteP2 = null;
   window.addEventListener('pointerdown', () => {
     const settlementUiOpen =
       settlementOverlay && !settlementOverlay.classList.contains('hidden');
-    if (gameState === 'playing' && !settlementUiOpen) {
-      GunnerShootSfx.warmOnUserGesture();
-    }
     if (
       gameState === 'playing' &&
       !ambientStarted &&
