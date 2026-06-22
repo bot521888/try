@@ -1663,8 +1663,8 @@ let deathSpriteP2 = null;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
   const GUNNER_SHOOT_MP3_URL = 'desert-eagle-cs.mp3';
-  const GUNNER_HEADSHOT_VOLUME = 0.17;
-  const GUNNER_SHOOT_VOLUME = 0.5;
+  const GUNNER_HEADSHOT_VOLUME = 0.21;
+  const GUNNER_SHOOT_VOLUME = 0.33;
   /** 沙鹰 mp3 开头可能有较长静音，扫描窗口加大 */
   const GUNNER_SHOOT_ATTACK_SCAN_SEC = 1.4;
 
