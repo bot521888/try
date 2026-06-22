@@ -224,11 +224,11 @@
   const gunBulletSprite = new Image();
   gunBulletSprite.src = 'assets/sprites/Character/gun/BULLET/Gun-bullet_Bullet.png';
 
-  /** 冥焰枪客（最高阶）：USP + 消音器（左/右朝向各一张） */
+  /** 冥焰枪客（最高阶）：USP + 消音器（左/右朝向各一张，透明底 PNG） */
   const gunnerUspLeftImg = new Image();
-  gunnerUspLeftImg.src = 'assets/usp-left.png';
+  gunnerUspLeftImg.src = './usp-left-transparent.png';
   const gunnerUspRightImg = new Image();
-  gunnerUspRightImg.src = 'assets/usp-right.png';
+  gunnerUspRightImg.src = './usp-right-transparent.png';
   const GUNNER_USP_SCALE = 0.115;
   const GUNNER_USP_GRIP_X = 0.36;
   const GUNNER_USP_GRIP_Y = 0.54;
