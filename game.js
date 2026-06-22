@@ -224,85 +224,16 @@
   const gunBulletSprite = new Image();
   gunBulletSprite.src = 'assets/sprites/Character/gun/BULLET/Gun-bullet_Bullet.png';
 
-  /** 冥焰枪客（最高阶）：USP + 消音器（左/右朝向各一张，透明底 PNG） */
+  /** 冥焰枪客（最高阶）：USP + 消音器（左/右朝向，removebg 透明 PNG） */
   const gunnerUspLeftImg = new Image();
-  gunnerUspLeftImg.src = './usp-left-transparent.png';
+  gunnerUspLeftImg.src = './usp-left.png';
   const gunnerUspRightImg = new Image();
-  gunnerUspRightImg.src = './usp-right-transparent.png';
-  const GUNNER_USP_SCALE = 0.115;
+  gunnerUspRightImg.src = './usp-right.png';
+  const GUNNER_USP_SCALE = 0.09;
   const GUNNER_USP_GRIP_X = 0.36;
   const GUNNER_USP_GRIP_Y = 0.54;
-
-  /** 文件名为 .png 但可能是 JPEG/黑底图：从边缘泛洪去掉背景，保留枪身 */
-  function preprocessUspPngBackground(sourceImg) {
-    const w = sourceImg.naturalWidth;
-    const h = sourceImg.naturalHeight;
-    if (!w || !h) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const cx = canvas.getContext('2d');
-    cx.drawImage(sourceImg, 0, 0);
-    const id = cx.getImageData(0, 0, w, h);
-    const d = id.data;
-    const visited = new Uint8Array(w * h);
-    const queue = new Int32Array(w * h);
-    let qs = 0;
-    let qe = 0;
-
-    function isBgPixel(r, g, b) {
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      const sat = Math.max(r, g, b) - Math.min(r, g, b);
-      if (lum <= 40) return true;
-      if (sat < 24 && lum >= 36 && lum <= 220) return true;
-      return false;
-    }
-
-    function tryPush(x, y) {
-      if (x < 0 || x >= w || y < 0 || y >= h) return;
-      const i = y * w + x;
-      if (visited[i]) return;
-      const o = i * 4;
-      if (!isBgPixel(d[o], d[o + 1], d[o + 2])) return;
-      visited[i] = 1;
-      queue[qe++] = i;
-    }
-
-    for (let x = 0; x < w; x++) {
-      tryPush(x, 0);
-      tryPush(x, h - 1);
-    }
-    for (let y = 0; y < h; y++) {
-      tryPush(0, y);
-      tryPush(w - 1, y);
-    }
-
-    while (qs < qe) {
-      const i = queue[qs++];
-      d[i * 4 + 3] = 0;
-      const x = i % w;
-      const y = (i / w) | 0;
-      tryPush(x - 1, y);
-      tryPush(x + 1, y);
-      tryPush(x, y - 1);
-      tryPush(x, y + 1);
-    }
-
-    cx.putImageData(id, 0, 0);
-    return canvas;
-  }
-
-  function bindGunnerUspPreprocess(img) {
-    const run = () => {
-      try {
-        img._uspCanvas = preprocessUspPngBackground(img);
-      } catch (_) { /* ignore */ }
-    };
-    img.addEventListener('load', run, { once: true });
-    if (img.complete && img.naturalWidth > 0) run();
-  }
-  bindGunnerUspPreprocess(gunnerUspLeftImg);
-  bindGunnerUspPreprocess(gunnerUspRightImg);
+  const GUNNER_USP_OFFSET_X = 8;
+  const GUNNER_USP_OFFSET_Y = 10;
 
   const bleedFrameMs = 120; // 每帧 120ms
   const bleedShotFrames = [3, 3]; // shot_1 / shot_2 都是 Sheet3
@@ -2235,8 +2166,8 @@ let deathSpriteP2 = null;
   function getGunnerHandPos(actor, ang) {
     const useRight = Math.cos(ang) >= 0;
     const recoil = actor.gunnerShootOnlyAnim ? 2.5 : 0;
-    const hx = actor.x + config.playerWidth * (useRight ? 0.56 : 0.44);
-    const hy = actor.y + config.playerHeight * 0.43;
+    const hx = actor.x + config.playerWidth * (useRight ? 0.58 : 0.46) + GUNNER_USP_OFFSET_X;
+    const hy = actor.y + config.playerHeight * 0.46 + GUNNER_USP_OFFSET_Y;
     return {
       x: hx - Math.cos(ang) * recoil,
       y: hy - Math.sin(ang) * recoil,
@@ -2248,14 +2179,11 @@ let deathSpriteP2 = null;
     if (!gunnerMode || !actor || actor.state !== 'alive') return;
     const ang = ensureGunnerAimAngle(actor);
     const useRight = Math.cos(ang) >= 0;
-    const raw = useRight ? gunnerUspRightImg : gunnerUspLeftImg;
-    const img = raw._uspCanvas || raw;
-    if (!raw._uspCanvas && (!raw.complete || raw.naturalWidth <= 0)) return;
+    const img = useRight ? gunnerUspRightImg : gunnerUspLeftImg;
+    if (!img.complete || img.naturalWidth <= 0) return;
 
-    const srcW = img.width || img.naturalWidth;
-    const srcH = img.height || img.naturalHeight;
-    const w = srcW * GUNNER_USP_SCALE;
-    const h = srcH * GUNNER_USP_SCALE;
+    const w = img.naturalWidth * GUNNER_USP_SCALE;
+    const h = img.naturalHeight * GUNNER_USP_SCALE;
     const hand = getGunnerHandPos(actor, ang);
 
     ctx.save();
