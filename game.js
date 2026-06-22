@@ -233,7 +233,7 @@
   const GUNNER_USP_GRIP_X = 0.36;
   const GUNNER_USP_GRIP_Y = 0.54;
   const GUNNER_USP_OFFSET_X = 8;
-  const GUNNER_USP_OFFSET_Y = 10;
+  const GUNNER_USP_OFFSET_Y = 20;
 
   const bleedFrameMs = 120; // 每帧 120ms
   const bleedShotFrames = [3, 3]; // shot_1 / shot_2 都是 Sheet3
