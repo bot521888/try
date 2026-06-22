@@ -224,6 +224,15 @@
   const gunBulletSprite = new Image();
   gunBulletSprite.src = 'assets/sprites/Character/gun/BULLET/Gun-bullet_Bullet.png';
 
+  /** 冥焰枪客（最高阶）：USP + 消音器（左/右朝向各一张） */
+  const gunnerUspLeftImg = new Image();
+  gunnerUspLeftImg.src = 'assets/usp-left.png';
+  const gunnerUspRightImg = new Image();
+  gunnerUspRightImg.src = 'assets/usp-right.png';
+  const GUNNER_USP_SCALE = 0.115;
+  const GUNNER_USP_GRIP_X = 0.36;
+  const GUNNER_USP_GRIP_Y = 0.54;
+
   const bleedFrameMs = 120; // 每帧 120ms
   const bleedShotFrames = [3, 3]; // shot_1 / shot_2 都是 Sheet3
 
@@ -2150,6 +2159,41 @@ let deathSpriteP2 = null;
     const dy = gameY - m.y;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
     actor.gunnerAimAngle = Math.atan2(dy, dx);
+  }
+
+  function getGunnerHandPos(actor, ang) {
+    const useRight = Math.cos(ang) >= 0;
+    const recoil = actor.gunnerShootOnlyAnim ? 2.5 : 0;
+    const hx = actor.x + config.playerWidth * (useRight ? 0.56 : 0.44);
+    const hy = actor.y + config.playerHeight * 0.43;
+    return {
+      x: hx - Math.cos(ang) * recoil,
+      y: hy - Math.sin(ang) * recoil,
+    };
+  }
+
+  /** 枪客阶段：USP 握在手中，随瞄准角旋转 */
+  function drawGunnerUspInHand(ctx, actor) {
+    if (!gunnerMode || !actor || actor.state !== 'alive') return;
+    const ang = ensureGunnerAimAngle(actor);
+    const useRight = Math.cos(ang) >= 0;
+    const img = useRight ? gunnerUspRightImg : gunnerUspLeftImg;
+    if (!img.complete || img.naturalWidth <= 0) return;
+
+    const w = img.naturalWidth * GUNNER_USP_SCALE;
+    const h = img.naturalHeight * GUNNER_USP_SCALE;
+    const hand = getGunnerHandPos(actor, ang);
+
+    ctx.save();
+    ctx.translate(hand.x, hand.y);
+    if (useRight) {
+      ctx.rotate(ang);
+      ctx.drawImage(img, -w * GUNNER_USP_GRIP_X, -h * GUNNER_USP_GRIP_Y, w, h);
+    } else {
+      ctx.rotate(ang - Math.PI);
+      ctx.drawImage(img, -w * (1 - GUNNER_USP_GRIP_X), -h * GUNNER_USP_GRIP_Y, w, h);
+    }
+    ctx.restore();
   }
 
   function pickGunnerActorFromScreenX(gameX) {
@@ -9578,6 +9622,7 @@ let deathSpriteP2 = null;
       ctx.fillRect(player.x, player.y, config.playerWidth, config.playerHeight);
     }
     ctx.restore();
+    drawGunnerUspInHand(ctx, player);
     ctx.save();
     ctx.fillStyle = '#60a5fa';
     ctx.font = 'bold 12px system-ui, sans-serif';
@@ -9650,6 +9695,7 @@ let deathSpriteP2 = null;
         ctx.fillStyle = '#4ade80';
         ctx.fillRect(player2.x, player2.y, config.playerWidth, config.playerHeight);
       }
+      drawGunnerUspInHand(ctx, player2);
       ctx.fillStyle = '#ef4444';
       ctx.font = 'bold 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
