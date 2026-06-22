@@ -1662,7 +1662,9 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
+  const GUNNER_SHOOT_MP3_URL = 'assets/gunshot.mp3';
   const GUNNER_HEADSHOT_VOLUME = 0.25;
+  const GUNNER_SHOOT_VOLUME = 0.5;
 
   /** 跳过 MP3 文件开头的静音，减少「点了才响」的体感延迟 */
   function sfxFindAttackOffset(audioBuffer, scanSec = 0.18, threshold = 0.025) {
@@ -1998,6 +2000,48 @@ let deathSpriteP2 = null;
       void this.ensureLoad();
     },
   };
+  /** 枪声：Web Audio 预解码 buffer，每枪新建 BufferSource，连射自然叠尾音 */
+  const GunnerShootSfx = {
+    buffer: null,
+    gain: null,
+    loadPromise: null,
+    ensureGain(ctx) {
+      if (!this.gain) {
+        this.gain = ctx.createGain();
+        this.gain.gain.value = GUNNER_SHOOT_VOLUME;
+        this.gain.connect(ctx.destination);
+      }
+    },
+    ensureLoad() {
+      if (this.loadPromise) return this.loadPromise;
+      this.loadPromise = (async () => {
+        try {
+          const ctx = ensureAudio();
+          const res = await fetch(GUNNER_SHOOT_MP3_URL);
+          if (!res.ok) return;
+          const raw = await res.arrayBuffer();
+          this.buffer = await ctx.decodeAudioData(raw);
+          this.ensureGain(ctx);
+        } catch (_) { /* ignore */ }
+      })();
+      return this.loadPromise;
+    },
+    play() {
+      try {
+        const ctx = ensureAudio();
+        if (ctx.state === 'suspended') void ctx.resume();
+        if (!this.buffer) {
+          void this.ensureLoad();
+          return;
+        }
+        this.ensureGain(ctx);
+        const src = ctx.createBufferSource();
+        src.buffer = this.buffer;
+        src.connect(this.gain);
+        src.start(0);
+      } catch (_) { /* ignore */ }
+    },
+  };
   /** G 键按住（用于神技按钮按下态；toggle 在首帧 !repeat 触发） */
   let godSkillKeyHeld = false;
   /** 双人 P2：C 键按住（外部神技条按下态） */
@@ -2119,7 +2163,9 @@ let deathSpriteP2 = null;
 
   function prepGunnerCombatAudio() {
     if (!gunnerMode) return;
+    resumeGameAudio();
     void GunnerHeadshotSfx.ensureLoad();
+    void GunnerShootSfx.ensureLoad();
   }
 
   function updateGunnerAimFromPointer(gameX, gameY) {
@@ -2158,6 +2204,7 @@ let deathSpriteP2 = null;
 
   function fireGunnerBullet(actor, t) {
     if (!gunnerMode || !actor || actor.state !== 'alive' || isVersusMode) return;
+    GunnerShootSfx.play();
     const ang = ensureGunnerAimAngle(actor);
     const spd = GUNNER_BULLET_SPEED;
     const m = getGunnerMuzzlePos(actor);
@@ -3096,12 +3143,18 @@ let deathSpriteP2 = null;
     if (!BGM.ctx) BGM.ctx = new (window.AudioContext || window.webkitAudioContext)();
     return BGM.ctx;
   }
+  function resumeGameAudio() {
+    const ctx = ensureAudio();
+    if (ctx.state === 'suspended') void ctx.resume();
+  }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
+    GunnerShootSfx.ensureLoad();
     BGM.start();
     ambientStarted = true;
   }
   void GunnerHeadshotSfx.ensureLoad();
+  void GunnerShootSfx.ensureLoad();
   function triggerBossPhase2Music() {
     const ctx = ensureAudio();
     const t = ctx.currentTime;
@@ -4050,6 +4103,7 @@ let deathSpriteP2 = null;
   canvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'playing') return;
     if (!(player.state === 'alive' || (isCoopMode && player2.state === 'alive'))) return;
+    resumeGameAudio();
     const settlementUiOpen =
       settlementOverlay && !settlementOverlay.classList.contains('hidden');
     if (!ambientStarted && !settlementUiOpen) startAmbientLoop();
@@ -4173,6 +4227,7 @@ let deathSpriteP2 = null;
 
   // 某些浏览器会拦截自动播放：首次点击时补一次启动
   window.addEventListener('pointerdown', () => {
+    resumeGameAudio();
     const settlementUiOpen =
       settlementOverlay && !settlementOverlay.classList.contains('hidden');
     if (
