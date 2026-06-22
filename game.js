@@ -1662,240 +1662,11 @@ let deathSpriteP2 = null;
   const GUNNER_SHOOT_INTERVAL = 0.2;
   const GUNNER_BULLET_SPEED = 1050;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
+  const GUNNER_SHOOT_MP3_URL = 'desert-eagle-cs.mp3';
   const GUNNER_HEADSHOT_VOLUME = 0.17;
-  const GUNNER_SHOOT_VOLUME = 1.5;
-
-  /** 程序化合成 AK 枪声：OfflineAudioContext 一次性烘焙，播放时零合成延迟 */
-  async function synthesizeAKGunshotBuffer(sampleRate) {
-    const duration = 0.48;
-    const frames = Math.ceil(sampleRate * duration);
-    const offline = new OfflineAudioContext(2, frames, sampleRate);
-    const t0 = 0;
-    const master = offline.createGain();
-    master.gain.value = 1;
-    master.connect(offline.destination);
-
-    const dry = offline.createGain();
-    dry.gain.value = 0.9;
-    dry.connect(master);
-
-    const wetSend = offline.createGain();
-    wetSend.gain.value = 0.5;
-    const wet = offline.createGain();
-    wet.gain.value = 0.38;
-    const irLen = Math.ceil(sampleRate * 0.24);
-    const ir = offline.createBuffer(2, irLen, sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = ir.getChannelData(ch);
-      for (let i = 0; i < irLen; i++) {
-        const t = i / irLen;
-        d[i] = (Math.random() * 2 - 1) * Math.exp(-t * 10) * (0.06 + 0.04 * (1 - t));
-      }
-    }
-    const convolver = offline.createConvolver();
-    convolver.buffer = ir;
-    wetSend.connect(convolver);
-    convolver.connect(wet);
-    wet.connect(master);
-
-    function route(node) {
-      node.connect(dry);
-      node.connect(wetSend);
-    }
-
-    function makePinkNoiseBuffer(sec) {
-      const n = Math.ceil(sampleRate * sec);
-      const buf = offline.createBuffer(1, n, sampleRate);
-      const d = buf.getChannelData(0);
-      let b0 = 0;
-      let b1 = 0;
-      let b2 = 0;
-      let b3 = 0;
-      let b4 = 0;
-      let b5 = 0;
-      let b6 = 0;
-      for (let i = 0; i < n; i++) {
-        const white = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.969 * b2 + white * 0.153852;
-        b3 = 0.8665 * b3 + white * 0.3104856;
-        b4 = 0.55 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.016898;
-        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-        b6 = white * 0.115926;
-        d[i] = pink;
-      }
-      return buf;
-    }
-
-    // 1) 低频 punch：70–160Hz 快速下滑
-    const punch = offline.createOscillator();
-    const punchG = offline.createGain();
-    punch.type = 'sine';
-    punch.frequency.setValueAtTime(158, t0);
-    punch.frequency.exponentialRampToValueAtTime(72, t0 + 0.058);
-    punchG.gain.setValueAtTime(0.95, t0);
-    punchG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.095);
-    punch.connect(punchG);
-    route(punchG);
-    punch.start(t0);
-    punch.stop(t0 + 0.1);
-
-    const punchSub = offline.createOscillator();
-    const punchSubG = offline.createGain();
-    punchSub.type = 'triangle';
-    punchSub.frequency.setValueAtTime(118, t0);
-    punchSub.frequency.exponentialRampToValueAtTime(48, t0 + 0.072);
-    punchSubG.gain.setValueAtTime(0.42, t0);
-    punchSubG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.088);
-    punchSub.connect(punchSubG);
-    route(punchSubG);
-    punchSub.start(t0);
-    punchSub.stop(t0 + 0.092);
-
-    // 2) 中高频爆炸：粉噪 + 带通扫频，快衰减
-    const blast = offline.createBufferSource();
-    blast.buffer = makePinkNoiseBuffer(0.14);
-    const blastBP = offline.createBiquadFilter();
-    blastBP.type = 'bandpass';
-    blastBP.frequency.setValueAtTime(3200, t0);
-    blastBP.frequency.exponentialRampToValueAtTime(780, t0 + 0.05);
-    blastBP.Q.setValueAtTime(0.75, t0);
-    const blastG = offline.createGain();
-    blastG.gain.setValueAtTime(0.78, t0);
-    blastG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
-    blast.connect(blastBP);
-    blastBP.connect(blastG);
-    route(blastG);
-    blast.start(t0);
-    blast.stop(t0 + 0.14);
-
-    const blast2 = offline.createBufferSource();
-    blast2.buffer = makePinkNoiseBuffer(0.08);
-    const blast2BP = offline.createBiquadFilter();
-    blast2BP.type = 'bandpass';
-    blast2BP.frequency.setValueAtTime(1800, t0);
-    blast2BP.frequency.exponentialRampToValueAtTime(420, t0 + 0.035);
-    blast2BP.Q.value = 1.1;
-    const blast2G = offline.createGain();
-    blast2G.gain.setValueAtTime(0.35, t0);
-    blast2G.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07);
-    blast2.connect(blast2BP);
-    blast2BP.connect(blast2G);
-    route(blast2G);
-    blast2.start(t0);
-    blast2.stop(t0 + 0.085);
-
-    // 3) 金属枪机 click：高频短脉冲（双段）
-    function addBoltClick(at, hz, peak) {
-      const osc = offline.createOscillator();
-      const g = offline.createGain();
-      const bp = offline.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = hz;
-      bp.Q.value = 8;
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(hz * 1.15, at);
-      osc.frequency.exponentialRampToValueAtTime(hz * 0.55, at + 0.012);
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.linearRampToValueAtTime(peak, at + 0.0008);
-      g.gain.exponentialRampToValueAtTime(0.001, at + 0.02);
-      osc.connect(bp);
-      bp.connect(g);
-      route(g);
-      osc.start(at);
-      osc.stop(at + 0.022);
-    }
-    addBoltClick(t0 + 0.013, 4100, 0.16);
-    addBoltClick(t0 + 0.036, 5200, 0.1);
-
-    // 4) 枪口 crack：极短 FM 瞬态（非裸噪声）
-    const crackCar = offline.createOscillator();
-    const crackMod = offline.createOscillator();
-    const crackModG = offline.createGain();
-    const crackG = offline.createGain();
-    const crackHP = offline.createBiquadFilter();
-    crackCar.type = 'sawtooth';
-    crackMod.type = 'sine';
-    crackCar.frequency.setValueAtTime(5200, t0);
-    crackCar.frequency.exponentialRampToValueAtTime(1400, t0 + 0.007);
-    crackMod.frequency.value = 220;
-    crackModG.gain.value = 900;
-    crackMod.connect(crackModG);
-    crackModG.connect(crackCar.frequency);
-    crackHP.type = 'highpass';
-    crackHP.frequency.value = 2600;
-    crackG.gain.setValueAtTime(0.48, t0);
-    crackG.gain.exponentialRampToValueAtTime(0.001, t0 + 0.011);
-    crackCar.connect(crackHP);
-    crackHP.connect(crackG);
-    route(crackG);
-    crackCar.start(t0);
-    crackMod.start(t0);
-    crackCar.stop(t0 + 0.014);
-    crackMod.stop(t0 + 0.014);
-
-    // 5) 轻微尾音：延迟反馈（叠加在 wet 总线上）
-    const tailIn = offline.createGain();
-    tailIn.gain.value = 0.22;
-    const tailDelay = offline.createDelay(0.12);
-    tailDelay.delayTime.value = 0.028;
-    const tailFB = offline.createGain();
-    tailFB.gain.value = 0.32;
-    const tailLP = offline.createBiquadFilter();
-    tailLP.type = 'lowpass';
-    tailLP.frequency.value = 2200;
-    const tailOut = offline.createGain();
-    tailOut.gain.value = 0.28;
-    tailIn.connect(tailDelay);
-    tailDelay.connect(tailLP);
-    tailLP.connect(tailFB);
-    tailFB.connect(tailDelay);
-    tailLP.connect(tailOut);
-    tailOut.connect(wet);
-    blastG.connect(tailIn);
-
-    return offline.startRendering();
-  }
-
-  let akGunshotBuffer = null;
-  let akGunGain = null;
-  let akGunSynthPromise = null;
-
-  function initAKGunshotBuffer() {
-    if (akGunshotBuffer) return Promise.resolve(akGunshotBuffer);
-    if (!akGunSynthPromise) {
-      akGunSynthPromise = (async () => {
-        const ctx = ensureAudio();
-        akGunshotBuffer = await synthesizeAKGunshotBuffer(ctx.sampleRate);
-        return akGunshotBuffer;
-      })();
-    }
-    return akGunSynthPromise;
-  }
-
-  /** 播放已缓存的合成枪声；每枪新建 BufferSource，连射自然叠尾音 */
-  function playAKSound() {
-    try {
-      const ctx = ensureAudio();
-      if (ctx.state === 'suspended') void ctx.resume();
-      if (!akGunshotBuffer) {
-        void initAKGunshotBuffer();
-        return;
-      }
-      if (!akGunGain) {
-        akGunGain = ctx.createGain();
-        akGunGain.gain.value = GUNNER_SHOOT_VOLUME;
-        akGunGain.connect(ctx.destination);
-      }
-      const src = ctx.createBufferSource();
-      src.buffer = akGunshotBuffer;
-      src.playbackRate.value = 0.94 + Math.random() * 0.1;
-      src.connect(akGunGain);
-      src.start(0);
-    } catch (_) { /* ignore */ }
-  }
+  const GUNNER_SHOOT_VOLUME = 0.5;
+  /** 沙鹰 mp3 开头可能有较长静音，扫描窗口加大 */
+  const GUNNER_SHOOT_ATTACK_SCAN_SEC = 1.4;
 
   /** 跳过 MP3 文件开头的静音，减少「点了才响」的体感延迟 */
   function sfxFindAttackOffset(audioBuffer, scanSec = 0.18, threshold = 0.025) {
@@ -1905,6 +1676,59 @@ let deathSpriteP2 = null;
       if (Math.abs(ch[i]) > threshold) return i / audioBuffer.sampleRate;
     }
     return 0;
+  }
+
+  /** 开枪：游戏加载时 fetch+decode 一次，开枪只播缓存 buffer */
+  const GunnerShootSfx = {
+    buffer: null,
+    gain: null,
+    startOffset: 0,
+    loadPromise: null,
+    ensureGain(ctx) {
+      if (!this.gain) {
+        this.gain = ctx.createGain();
+        this.gain.gain.value = GUNNER_SHOOT_VOLUME;
+        this.gain.connect(ctx.destination);
+      }
+    },
+    ensureLoad() {
+      if (this.loadPromise) return this.loadPromise;
+      this.loadPromise = (async () => {
+        try {
+          const ctx = ensureAudio();
+          const res = await fetch(GUNNER_SHOOT_MP3_URL);
+          if (!res.ok) return;
+          const raw = await res.arrayBuffer();
+          this.buffer = await ctx.decodeAudioData(raw);
+          this.startOffset = sfxFindAttackOffset(
+            this.buffer,
+            GUNNER_SHOOT_ATTACK_SCAN_SEC,
+            0.02
+          );
+          this.ensureGain(ctx);
+        } catch (_) { /* ignore */ }
+      })();
+      return this.loadPromise;
+    },
+    play() {
+      try {
+        const ctx = ensureAudio();
+        if (ctx.state === 'suspended') void ctx.resume();
+        if (!this.buffer) {
+          void this.ensureLoad();
+          return;
+        }
+        this.ensureGain(ctx);
+        const src = ctx.createBufferSource();
+        src.buffer = this.buffer;
+        src.connect(this.gain);
+        src.start(0, this.startOffset);
+      } catch (_) { /* ignore */ }
+    },
+  };
+
+  function playShot() {
+    GunnerShootSfx.play();
   }
 
   /** 枪客曳光弹：火星拖尾 + 发光弹头（Canvas 2D / lighter 混合） */
@@ -2354,7 +2178,7 @@ let deathSpriteP2 = null;
     if (!gunnerMode) return;
     resumeGameAudio();
     void GunnerHeadshotSfx.ensureLoad();
-    void initAKGunshotBuffer();
+    void GunnerShootSfx.ensureLoad();
   }
 
   function updateGunnerAimFromPointer(gameX, gameY) {
@@ -2393,7 +2217,7 @@ let deathSpriteP2 = null;
 
   function fireGunnerBullet(actor, t) {
     if (!gunnerMode || !actor || actor.state !== 'alive' || isVersusMode) return;
-    playAKSound();
+    playShot();
     const ang = ensureGunnerAimAngle(actor);
     const spd = GUNNER_BULLET_SPEED;
     const m = getGunnerMuzzlePos(actor);
@@ -3338,12 +3162,12 @@ let deathSpriteP2 = null;
   }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
-    initAKGunshotBuffer();
+    GunnerShootSfx.ensureLoad();
     BGM.start();
     ambientStarted = true;
   }
   void GunnerHeadshotSfx.ensureLoad();
-  void initAKGunshotBuffer();
+  void GunnerShootSfx.ensureLoad();
   function triggerBossPhase2Music() {
     const ctx = ensureAudio();
     const t = ctx.currentTime;
