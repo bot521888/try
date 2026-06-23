@@ -1641,7 +1641,9 @@ let deathSpriteP2 = null;
   /** 冥焰枪客：瞄准用（pointermove 更新角度，pointerdown 点射） */
   const GUNNER_BULLET_HITS_TO_KILL = 4;
   const GUNNER_SHOOT_INTERVAL = 0.2;
-  const GUNNER_BULLET_SPEED = 1050;
+  const GUNNER_BULLET_SPEED = 2100;
+  const GUNNER_BULLET_HIT_SHAKE_MS = 42;
+  const GUNNER_BULLET_HIT_SHAKE_AMP = 1.6;
   const GUNNER_HEADSHOT_MP3_URL = 'bhit_helmet-1.mp3';
   const GUNNER_SHOOT_MP3_URL = 'usp1_8699f.mp3';
   const GUNNER_HEADSHOT_VOLUME = 0.21;
@@ -3521,12 +3523,13 @@ let deathSpriteP2 = null;
   let shakePeakMs = 0;
   /** 敲门音节流（ms），避免同一瞬间多次 screenShake 连播刺耳 */
   let lastShakeKnockAtMs = 0;
-  function screenShake(durationMs, amountPx) {
+  function screenShake(durationMs, amountPx, silent) {
     const d = durationMs != null ? durationMs : config.screenShakeDuration;
     const a = amountPx != null ? amountPx : config.screenShakeAmount;
     shakeRemain = Math.max(shakeRemain, d);
     shakePeakMs = Math.max(shakePeakMs, d);
     shakeAmount = Math.max(shakeAmount, a);
+    if (silent) return;
     const nowMs = performance.now();
     if (nowMs - lastShakeKnockAtMs >= 44) {
       lastShakeKnockAtMs = nowMs;
@@ -6715,6 +6718,9 @@ let deathSpriteP2 = null;
           startTime: t,
           duration: hitZone === 'head' ? 0.1 : 0.06,
         });
+        if (gunnerMode) {
+          screenShake(GUNNER_BULLET_HIT_SHAKE_MS, GUNNER_BULLET_HIT_SHAKE_AMP, true);
+        }
 
         const hpBeforeBullet = enemy.hp;
         const bulletDmg = getGunnerBulletDamageForEnemy(enemy, hitZone || 'body');
