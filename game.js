@@ -205,39 +205,6 @@
   bgTrafficCone.src = 'assets/back/obj/Traffic-cone.png';
   const BG_PROP_SCALE = 4;
 
-  // ========== 冥焰枪客枪械精灵（Gun/ 四方向 sheet） ==========
-  const GUNNER_GUN_BASE = 'Gun/';
-  const GUNNER_GUN_SCALE = 4.6;
-  const GUNNER_GUN = {
-    side: {
-      idle: { src: GUNNER_GUN_BASE + 'Gun_side_idle-and-run-Sheet6.png', img: new Image(), frames: 6 },
-      shoot: { src: GUNNER_GUN_BASE + 'Gun_side_shoot-Sheet3.png', img: new Image(), frames: 3 },
-    },
-    left: {
-      idle: { src: GUNNER_GUN_BASE + 'Gun_side-left_idle-and-run-Sheet6.png', img: new Image(), frames: 6 },
-      shoot: { src: GUNNER_GUN_BASE + 'Gun_side-left_shoot-Sheet3.png', img: new Image(), frames: 3 },
-    },
-    up: {
-      idle: { src: GUNNER_GUN_BASE + 'Gun_up_idle-and-run-Sheet6.png', img: new Image(), frames: 6 },
-      shoot: { src: GUNNER_GUN_BASE + 'Gun_up_shoot-Sheet3.png', img: new Image(), frames: 3 },
-    },
-    down: {
-      idle: { src: GUNNER_GUN_BASE + 'Gun_down_idle-and-run-Sheet6.png', img: new Image(), frames: 6 },
-      shoot: { src: GUNNER_GUN_BASE + 'Gun_down_shoot-Sheet3.png', img: new Image(), frames: 3 },
-    },
-  };
-  const GUNNER_GUN_ANCHOR = {
-    side: { x: 0.54, y: 0.4 },
-    left: { x: 0.06, y: 0.4 },
-    up: { x: 0.46, y: 0.24 },
-    down: { x: 0.46, y: 0.5 },
-  };
-  for (const dir of Object.keys(GUNNER_GUN)) {
-    for (const kind of ['idle', 'shoot']) {
-      GUNNER_GUN[dir][kind].img.src = GUNNER_GUN[dir][kind].src;
-    }
-  }
-
   const bleedFrameMs = 120; // 每帧 120ms
   const bleedShotFrames = [3, 3]; // shot_1 / shot_2 都是 Sheet3
 
@@ -2164,55 +2131,6 @@ let deathSpriteP2 = null;
     const dy = gameY - m.y;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
     actor.gunnerAimAngle = Math.atan2(dy, dx);
-  }
-
-  function getGunnerGunDir(ang) {
-    const ax = Math.cos(ang);
-    const ay = Math.sin(ang);
-    if (Math.abs(ax) >= Math.abs(ay)) return ax >= 0 ? 'side' : 'left';
-    return ay < 0 ? 'up' : 'down';
-  }
-
-  function getGunnerGunFrame(actor, t, sheetFrames) {
-    if (actor.gunnerShootOnlyAnim && actor.attackStart > 0) {
-      const dur = actor.attackDurationSec || 0.11;
-      const p = Math.min(1, Math.max(0, (t - actor.attackStart) / dur));
-      return Math.min(sheetFrames - 1, Math.floor(p * sheetFrames));
-    }
-    if (Math.abs(actor.vx || 0) > 35 && actor.onGround) {
-      return Math.floor(t * 12) % sheetFrames;
-    }
-    return 0;
-  }
-
-  /** 枪客阶段：Gun/ 四方向精灵（上/下/左/右），射击与跑步分 sheet */
-  function drawGunnerGunSprite(ctx, actor, t) {
-    if (!gunnerMode || !actor || actor.state !== 'alive') return;
-    const ang = ensureGunnerAimAngle(actor);
-    const dir = getGunnerGunDir(ang);
-    const pack = GUNNER_GUN[dir];
-    if (!pack) return;
-    const shooting = !!actor.gunnerShootOnlyAnim;
-    const sheet = shooting ? pack.shoot : pack.idle;
-    const img = sheet.img;
-    if (!img.complete || img.naturalWidth <= 0) return;
-
-    const frames = sheet.frames;
-    const frame = getGunnerGunFrame(actor, t, frames);
-    const fw = img.naturalWidth / frames;
-    const fh = img.naturalHeight;
-    const dw = fw * GUNNER_GUN_SCALE;
-    const dh = fh * GUNNER_GUN_SCALE;
-    const anchor = GUNNER_GUN_ANCHOR[dir] || GUNNER_GUN_ANCHOR.side;
-    const recoil = shooting ? 2 : 0;
-    const dx = Math.cos(ang) * recoil;
-    const dy = Math.sin(ang) * recoil;
-    const px = actor.x + config.playerWidth * anchor.x + dx;
-    const py = actor.y + config.playerHeight * anchor.y + dy;
-
-    ctx.save();
-    ctx.drawImage(img, frame * fw, 0, fw, fh, px, py, dw, dh);
-    ctx.restore();
   }
 
   function pickGunnerActorFromScreenX(gameX) {
@@ -9641,7 +9559,6 @@ let deathSpriteP2 = null;
       ctx.fillRect(player.x, player.y, config.playerWidth, config.playerHeight);
     }
     ctx.restore();
-    drawGunnerGunSprite(ctx, player, t);
     ctx.save();
     ctx.fillStyle = '#60a5fa';
     ctx.font = 'bold 12px system-ui, sans-serif';
@@ -9714,7 +9631,6 @@ let deathSpriteP2 = null;
         ctx.fillStyle = '#4ade80';
         ctx.fillRect(player2.x, player2.y, config.playerWidth, config.playerHeight);
       }
-      drawGunnerGunSprite(ctx, player2, t);
       ctx.fillStyle = '#ef4444';
       ctx.font = 'bold 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
