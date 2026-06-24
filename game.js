@@ -190,9 +190,11 @@
   const angelFlyMaleSprite = new Image();
   angelFlyMaleSprite.src = 'assets/fly/z0qOP-removebg-preview.png';
 
-  /** 武林高手：降龙十八掌能量龙 */
+  /** 武林高手：降龙十八掌能量龙（左右各一张，避免向左时倒退滑行） */
   const xianglongDragonSprite = new Image();
   xianglongDragonSprite.src = 'assets/effects/xl18z-dragon-sprite.png';
+  const xianglongDragonSpriteLeft = new Image();
+  xianglongDragonSpriteLeft.src = 'assets/effects/xl18z-dragon-sprite-left.png';
 
   // ========== 背景道具（assets/back/obj） ==========
   const bgBench = new Image();
@@ -7087,6 +7089,7 @@ let deathSpriteP2 = null;
         isAngelGold: !!angelMode && !demonMode && !thorMode && !roninMode,
         isDemonDark: !!demonMode && !thorMode && !roninMode,
         isThorThunder: !!thorMode && !roninMode,
+        isMartialQi: !!martialMode,
         beamL: 36 + Math.random() * 48,
         beamW: 3.5 + Math.random() * 4.5,
       });
@@ -7118,6 +7121,7 @@ let deathSpriteP2 = null;
         isAngelGold: !!angelMode && !demonMode && !thorMode && !roninMode,
         isDemonDark: !!demonMode && !thorMode && !roninMode,
         isThorThunder: !!thorMode && !roninMode,
+        isMartialQi: !!martialMode,
         beamL: 48 + Math.random() * 72,
         beamW: 4 + Math.random() * 5,
       });
@@ -10530,27 +10534,29 @@ let deathSpriteP2 = null;
     for (const d of xianglongDragonPalms) {
       const a = Math.max(0, Math.min(1, d.life / (d.maxLife || 1.45)));
       const scale = d.scale || 0.56;
-      const dw = xianglongDragonSprite.naturalWidth * scale;
-      const dh = xianglongDragonSprite.naturalHeight * scale;
+      const dragonImg = d.vx < 0 ? xianglongDragonSpriteLeft : xianglongDragonSprite;
+      const dw = dragonImg.naturalWidth * scale;
+      const dh = dragonImg.naturalHeight * scale;
+      const drawX = d.vx < 0 ? d.x - dw : d.x;
       ctx.save();
       ctx.globalAlpha = 0.18 * a;
       ctx.shadowColor = 'rgba(103, 232, 249, 0.9)';
       ctx.shadowBlur = 18;
-      if (xianglongDragonSprite.complete && xianglongDragonSprite.naturalWidth > 0) {
-        ctx.drawImage(xianglongDragonSprite, d.x - 30, d.y + 16, dw, dh);
+      if (dragonImg.complete && dragonImg.naturalWidth > 0) {
+        ctx.drawImage(dragonImg, drawX - (d.vx < 0 ? -30 : 30), d.y + 16, dw, dh);
       }
       ctx.globalAlpha = 0.95 * a;
       ctx.shadowBlur = 10;
-      if (xianglongDragonSprite.complete && xianglongDragonSprite.naturalWidth > 0) {
-        ctx.drawImage(xianglongDragonSprite, d.x, d.y, dw, dh);
+      if (dragonImg.complete && dragonImg.naturalWidth > 0) {
+        ctx.drawImage(dragonImg, drawX, d.y, dw, dh);
       } else {
-        const g = ctx.createLinearGradient(d.x, d.y, d.x + 180, d.y + 30);
+        const g = ctx.createLinearGradient(drawX, d.y, drawX + (d.vx < 0 ? -180 : 180), d.y + 30);
         g.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
         g.addColorStop(0.45, 'rgba(253, 230, 138, 0.95)');
         g.addColorStop(1, 'rgba(103, 232, 249, 0.9)');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.ellipse(d.x + 85, d.y + 60, 100, 28, d.rot || 0, 0, Math.PI * 2);
+        ctx.ellipse(drawX + (d.vx < 0 ? dw - 85 : 85), d.y + 60, 100, 28, d.rot || 0, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -10655,15 +10661,21 @@ let deathSpriteP2 = null;
         const ang = Math.atan2(p.vy, p.vx);
         const L = (p.beamL || 40) * (0.35 + 0.65 * alpha);
         const W = p.beamW || 4;
-        const thunder = !!p.isThorThunder;
-        const dark = !!p.isDemonDark && !thunder;
-        const gold = !!p.isAngelGold && !dark && !thunder;
+        const martialQi = !!p.isMartialQi;
+        const thunder = !!p.isThorThunder && !martialQi;
+        const dark = !!p.isDemonDark && !thunder && !martialQi;
+        const gold = !!p.isAngelGold && !dark && !thunder && !martialQi;
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(ang);
         ctx.globalAlpha = Math.min(1, alpha * 1.08);
         const g = ctx.createLinearGradient(0, 0, L, 0);
-        if (thunder) {
+        if (martialQi) {
+          g.addColorStop(0, `rgba(255, 255, 245, ${0.78 * alpha})`);
+          g.addColorStop(0.28, `rgba(253, 230, 138, ${0.98 * alpha})`);
+          g.addColorStop(0.62, `rgba(103, 232, 249, ${0.96 * alpha})`);
+          g.addColorStop(1, `rgba(14, 116, 144, ${0.42 * alpha})`);
+        } else if (thunder) {
           g.addColorStop(0, `rgba(255, 255, 255, ${0.72 * alpha})`);
           g.addColorStop(0.32, `rgba(140, 220, 255, ${0.98 * alpha})`);
           g.addColorStop(0.68, `rgba(40, 120, 255, ${0.96 * alpha})`);
@@ -10686,9 +10698,11 @@ let deathSpriteP2 = null;
         }
         ctx.fillStyle = g;
         ctx.fillRect(0, -W / 2, L, W);
-        ctx.fillStyle = thunder
-          ? `rgba(255, 255, 255, ${0.78 * alpha})`
-          : dark
+        ctx.fillStyle = martialQi
+          ? `rgba(255, 255, 255, ${0.72 * alpha})`
+          : thunder
+            ? `rgba(255, 255, 255, ${0.78 * alpha})`
+            : dark
             ? `rgba(150, 45, 95, ${0.82 * alpha})`
             : gold
               ? `rgba(255, 255, 255, ${0.55 * alpha})`
