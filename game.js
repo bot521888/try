@@ -2375,7 +2375,6 @@ let deathSpriteP2 = null;
         if (hpBefore > 0 && enemy.hp <= 0) {
           const anyAlive = enemies.some((e) => e.hp > 0);
           if (anyAlive) addKillImpactScreenShake(enemy);
-          else if (!slowMotionTimer) triggerSlowMotion(cx, cy, !!enemy.isBoss);
         }
         hit = true;
         break;
@@ -2474,7 +2473,6 @@ let deathSpriteP2 = null;
     if (hpBefore > 0 && best.hp <= 0) {
       const anyAlive = enemies.some((e) => e.hp > 0);
       if (anyAlive) addKillImpactScreenShake(best);
-      else if (!slowMotionTimer) triggerSlowMotion(cx, cy, !!best.isBoss);
     }
   }
 
@@ -2748,7 +2746,6 @@ let deathSpriteP2 = null;
         if (hpBefore > 0 && enemy.hp <= 0) {
           const anyAlive = enemies.some((e) => e.hp > 0);
           if (anyAlive) addKillImpactScreenShake(enemy);
-          else if (!slowMotionTimer) triggerSlowMotion(cx, cy, !!enemy.isBoss);
         }
         enemy.vx += Math.cos(q.rot) * 200;
         enemy.vy -= 60;
@@ -2939,7 +2936,6 @@ let deathSpriteP2 = null;
         if (hpBefore > 0 && enemy.hp <= 0) {
           const anyAlive = enemies.some((e) => e.hp > 0);
           if (anyAlive) addKillImpactScreenShake(enemy);
-          else if (!slowMotionTimer) triggerSlowMotion(cx, cy, !!enemy.isBoss);
         } else {
           screenShake(90, 4.5, true);
         }
@@ -3116,7 +3112,7 @@ let deathSpriteP2 = null;
       const t0 = this.ctx.currentTime;
       if (!this.masterGain) {
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(0.25, t0);
+        this.masterGain.gain.setValueAtTime(0.16, t0);
         this.masterGain.connect(this.ctx.destination);
         bgmMasterGain = this.masterGain;
       }
@@ -3132,7 +3128,7 @@ let deathSpriteP2 = null;
         if (this.masterGain) {
           const t = this.ctx.currentTime;
           this.masterGain.gain.cancelScheduledValues(t);
-          this.masterGain.gain.setValueAtTime(0.25, t);
+          this.masterGain.gain.setValueAtTime(0.16, t);
         }
         return;
       }
@@ -3162,7 +3158,7 @@ let deathSpriteP2 = null;
                 {
                   const t = this.ctx.currentTime;
                   this.masterGain.gain.cancelScheduledValues(t);
-                  this.masterGain.gain.setValueAtTime(0.25, t);
+                  this.masterGain.gain.setValueAtTime(0.16, t);
                 }
                 console.log('BGM loaded and started:', url);
                 break;
@@ -3184,14 +3180,14 @@ let deathSpriteP2 = null;
       if (this.source && this.masterGain && this.ctx) {
         const t = this.ctx.currentTime;
         this.masterGain.gain.cancelScheduledValues(t);
-        this.masterGain.gain.setValueAtTime(0.25, t);
+        this.masterGain.gain.setValueAtTime(0.16, t);
       }
     },
 
     update(dt, t, stageIndex) {
       if (!this.started || !this.ctx || !this.masterGain) return;
       const phase = stageIndex < 2 ? 'explore' : stageIndex === 2 ? 'elite' : 'boss';
-      const vol = phase === 'boss' ? 0.28 : 0.25;
+      const vol = phase === 'boss' ? 0.18 : 0.16;
       this.masterGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.5);
     },
 
@@ -3407,7 +3403,7 @@ let deathSpriteP2 = null;
     const src = ctx.createBufferSource();
     const gain = ctx.createGain();
     src.buffer = dragonRoarAudioBuffer;
-    gain.gain.setValueAtTime(0.92, t);
+    gain.gain.setValueAtTime(1.15, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.25, src.buffer.duration));
     src.connect(gain);
     gain.connect(ctx.destination);
@@ -3427,8 +3423,8 @@ let deathSpriteP2 = null;
     const t = ctx.currentTime;
     if (bgmMasterGain) {
       bgmMasterGain.gain.cancelScheduledValues(t);
-      bgmMasterGain.gain.setValueAtTime(0.22, t);
-      bgmMasterGain.gain.linearRampToValueAtTime(0.2, t + 3);
+      bgmMasterGain.gain.setValueAtTime(0.14, t);
+      bgmMasterGain.gain.linearRampToValueAtTime(0.13, t + 3);
     }
     const playDrum = () => {
       const t2 = ctx.currentTime;
@@ -5950,7 +5946,6 @@ let deathSpriteP2 = null;
       if (hpBefore > 0 && enemy.hp <= 0) {
         const anyAlive = enemies.some((e) => e.hp > 0);
         if (anyAlive) addKillImpactScreenShake(enemy);
-        else if (!slowMotionTimer) triggerSlowMotion(cx, cy, !!enemy.isBoss);
       }
       anyHit = true;
     }
@@ -7009,13 +7004,6 @@ let deathSpriteP2 = null;
         if (hpBeforeBullet > 0 && enemy.hp <= 0) {
           const anyAlive = enemies.some((e) => e.hp > 0);
           if (anyAlive) addKillImpactScreenShake(enemy);
-          else if (!slowMotionTimer) {
-            triggerSlowMotion(
-              enemy.x + enemy.width / 2,
-              enemy.y + enemy.height / 2,
-              !!enemy.isBoss
-            );
-          }
         }
         enemy.vx += (Math.sign(b.vx || b.facing || 1)) * 180;
         enemy.vy -= 70;
@@ -7359,11 +7347,6 @@ let deathSpriteP2 = null;
         if (hpBefore > 0 && enemy.hp <= 0) {
           const anyAlive = enemies.some((e) => e.hp > 0);
           if (anyAlive) addKillImpactScreenShake(enemy);
-          else if (!slowMotionTimer) {
-            const kx = enemy.x + enemy.width / 2;
-            const ky = enemy.y + enemy.height / 2;
-            triggerSlowMotion(kx, ky, !!enemy.isBoss);
-          }
         }
         // ========== 击退逻辑（普通/超级拳 + J 三段）==========
         const dir = player.facing || 1;
