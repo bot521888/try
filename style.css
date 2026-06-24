@@ -83,6 +83,11 @@ body {
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
 }
 
+.touch-btn--god.touch-god--tier-martial.touch-god--held {
+  border-color: rgba(253, 230, 138, 0.96);
+  box-shadow: 0 0 16px rgba(103, 232, 249, 0.45);
+}
+
 .touch-btn--god.touch-god--tier-ronin.touch-god--held {
   border-color: rgba(222, 184, 135, 0.95);
   box-shadow: 0 0 16px rgba(200, 140, 90, 0.5);
@@ -118,6 +123,11 @@ body {
 
 .touch-btn--godbar.touch-god--held {
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.45);
+}
+
+.touch-btn--godbar.touch-god--tier-martial.touch-god--held {
+  border-color: rgba(253, 230, 138, 0.96);
+  box-shadow: 0 0 16px rgba(103, 232, 249, 0.45);
 }
 
 .touch-btn--godbar.touch-god--tier-ronin.touch-god--held {
