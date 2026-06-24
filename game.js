@@ -2243,6 +2243,8 @@ let deathSpriteP2 = null;
     playerBullets.push({
       x: m.x + Math.cos(ang) * 8,
       y: m.y + Math.sin(ang) * 8,
+      spawnX: m.x,
+      spawnY: m.y,
       vx: Math.cos(ang) * spd,
       vy: Math.sin(ang) * spd,
       facing: Math.sign(Math.cos(ang)) || actor.facing || 1,
@@ -5103,10 +5105,55 @@ let deathSpriteP2 = null;
   }
 
   /** 子弹 vs 敌人：枪客模式下优先判定头部 */
-  function getGunnerBulletHitZone(bBox, enemy) {
+  function expandBox(box, pad) {
+    return {
+      left: box.left - pad,
+      right: box.right + pad,
+      top: box.top - pad,
+      bottom: box.bottom + pad,
+    };
+  }
+
+  function pointInBox(x, y, box) {
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  }
+
+  function segmentIntersectsBox(x1, y1, x2, y2, box) {
+    if (pointInBox(x1, y1, box) || pointInBox(x2, y2, box)) return true;
+    let t0 = 0;
+    let t1 = 1;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const clip = (p, q) => {
+      if (Math.abs(p) < 1e-9) return q >= 0;
+      const r = q / p;
+      if (p < 0) {
+        if (r > t1) return false;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return false;
+        if (r < t1) t1 = r;
+      }
+      return true;
+    };
+    return (
+      clip(-dx, x1 - box.left) &&
+      clip(dx, box.right - x1) &&
+      clip(-dy, y1 - box.top) &&
+      clip(dy, box.bottom - y1)
+    );
+  }
+
+  function getGunnerBulletHitZone(bBox, enemy, sweep = null) {
     const { head, body } = getEnemyGunnerHeadBodySplit(enemy);
     if (boxesOverlap(bBox, head)) return 'head';
     if (boxesOverlap(bBox, body)) return 'body';
+    if (sweep) {
+      const headSweepBox = expandBox(head, sweep.radius || 0);
+      const bodySweepBox = expandBox(body, sweep.radius || 0);
+      if (segmentIntersectsBox(sweep.prevX, sweep.prevY, sweep.x, sweep.y, headSweepBox)) return 'head';
+      if (segmentIntersectsBox(sweep.prevX, sweep.prevY, sweep.x, sweep.y, bodySweepBox)) return 'body';
+    }
     return null;
   }
 
@@ -6938,8 +6985,10 @@ let deathSpriteP2 = null;
   function updatePlayerBullets(dt, t) {
     for (let i = playerBullets.length - 1; i >= 0; i--) {
       const b = playerBullets[i];
-      const prevX = b.x;
-      const prevY = b.y;
+      const prevX = b.spawnX == null ? b.x : b.spawnX;
+      const prevY = b.spawnY == null ? b.y : b.spawnY;
+      b.spawnX = null;
+      b.spawnY = null;
       b.x += b.vx * dt;
       b.y += (b.vy || 0) * dt;
       const movedDist = Math.hypot(b.x - prevX, b.y - prevY);
@@ -6966,7 +7015,15 @@ let deathSpriteP2 = null;
         if (enemy.invulnerableUntil && t < enemy.invulnerableUntil) continue;
         const r = 4;
         const bBox = { left: b.x - r, right: b.x + r, top: b.y - r, bottom: b.y + r };
-        const hitZone = gunnerMode ? getGunnerBulletHitZone(bBox, enemy) : null;
+        const hitZone = gunnerMode
+          ? getGunnerBulletHitZone(bBox, enemy, {
+              prevX,
+              prevY,
+              x: b.x,
+              y: b.y,
+              radius: r,
+            })
+          : null;
         if (gunnerMode) {
           if (!hitZone) continue;
         } else {
