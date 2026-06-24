@@ -2793,7 +2793,7 @@ let deathSpriteP2 = null;
     const rot = Math.atan2(uy, ux);
     xianglongDragonPalms.push({
       x: pcx + ux * 42,
-      y: pcy - 54 + uy * 10,
+      y: pcy - 76 + uy * 10,
       vx: ux * XIANGLONG_DRAGON_SPEED,
       vy: uy * XIANGLONG_DRAGON_SPEED * 0.42,
       rot,
@@ -2803,6 +2803,7 @@ let deathSpriteP2 = null;
       damage: getXianglongDamage(source),
       owner: source,
       hitIds: new Set(),
+      sparkTimer: 0,
     });
     for (let i = 0; i < 18; i++) {
       xianglongPalmWaves.push({
@@ -2861,6 +2862,33 @@ let deathSpriteP2 = null;
       d.x += d.vx * dt;
       d.y += d.vy * dt + Math.sin((d.maxLife - d.life) * 13) * 0.8;
       d.life -= dt;
+      d.sparkTimer = (d.sparkTimer || 0) - dt;
+      while (d.sparkTimer <= 0) {
+        d.sparkTimer += 0.018;
+        const forward = Math.sign(d.vx || 1);
+        for (let k = 0; k < 2; k++) {
+          const bodyU = Math.random();
+          const side = (Math.random() - 0.5) * 34;
+          const bodyX = (46 + bodyU * 185) * (d.scale || 0.56);
+          const px = d.vx < 0 ? d.x - bodyX : d.x + bodyX;
+          const py =
+            d.y +
+            (62 + Math.sin(bodyU * Math.PI * 2 + t * 8) * 24 + side) *
+              (d.scale || 0.56);
+          xianglongSparks.push({
+            x: px,
+            y: py,
+            vx: -forward * (70 + Math.random() * 150) + (Math.random() - 0.5) * 100,
+            vy: -95 + Math.random() * 190,
+            life: 0.32 + Math.random() * 0.28,
+            maxLife: 0.6,
+            size: 2.2 + Math.random() * 4.2,
+            cyan: Math.random() < 0.55,
+            dragonTrail: true,
+          });
+        }
+      }
+      while (xianglongSparks.length > 190) xianglongSparks.shift();
       if (
         d.life <= 0 ||
         d.x < -wallPad ||
@@ -2900,7 +2928,9 @@ let deathSpriteP2 = null;
             vy: -160 - Math.random() * 160,
             life: 0.38,
             maxLife: 0.38,
-            isRageGold: true,
+            noGravity: true,
+            isMartialQiDot: true,
+            cyan: k % 2 === 0,
           });
         }
         if (hpBefore > 0 && enemy.hp <= 0) spawnBerserkerKillGoldBeam(enemy);
@@ -7136,6 +7166,7 @@ let deathSpriteP2 = null;
       life: 0.58,
       maxLife: 0.58,
       width: 32 + Math.random() * 18,
+      isMartialDragon: !!martialMode,
       isDemonDark: !!demonMode && !thorMode && !roninMode,
       isThorThunder: !!thorMode && !roninMode,
       isRoninSilver: !!roninMode,
@@ -10527,8 +10558,36 @@ let deathSpriteP2 = null;
       const a = Math.max(0, s.life / (s.maxLife || 0.55));
       ctx.save();
       ctx.globalAlpha = a;
-      ctx.fillStyle = s.cyan ? '#67e8f9' : '#fde68a';
-      ctx.fillRect(s.x, s.y, s.size || 3, s.size || 3);
+      if (s.dragonTrail) {
+        const r = (s.size || 3) * (0.9 + a);
+        ctx.shadowColor = s.cyan ? 'rgba(103, 232, 249, 0.9)' : 'rgba(253, 230, 138, 0.95)';
+        ctx.shadowBlur = 10;
+        const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 3.2);
+        if (s.cyan) {
+          g.addColorStop(0, `rgba(255, 255, 255, ${0.95 * a})`);
+          g.addColorStop(0.34, `rgba(103, 232, 249, ${0.92 * a})`);
+          g.addColorStop(1, `rgba(14, 116, 144, ${0.05 * a})`);
+        } else {
+          g.addColorStop(0, `rgba(255, 255, 245, ${0.95 * a})`);
+          g.addColorStop(0.36, `rgba(253, 230, 138, ${0.9 * a})`);
+          g.addColorStop(1, `rgba(217, 119, 6, ${0.06 * a})`);
+        }
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r * 2.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = s.cyan
+          ? `rgba(165, 243, 252, ${0.72 * a})`
+          : `rgba(254, 240, 138, ${0.72 * a})`;
+        ctx.lineWidth = Math.max(1.2, (s.size || 3) * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - (s.vx || 0) * 0.024, s.y - (s.vy || 0) * 0.024);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = s.cyan ? '#67e8f9' : '#fde68a';
+        ctx.fillRect(s.x, s.y, s.size || 3, s.size || 3);
+      }
       ctx.restore();
     }
     for (const d of xianglongDragonPalms) {
@@ -10575,7 +10634,12 @@ let deathSpriteP2 = null;
       ctx.save();
       ctx.globalAlpha = Math.min(1, a * 1.05);
       const grad = ctx.createLinearGradient(x, y0, x, y1);
-      if (b.isRoninSilver) {
+      if (b.isMartialDragon) {
+        grad.addColorStop(0, `rgba(255, 255, 245, ${0.34 * a})`);
+        grad.addColorStop(0.28, `rgba(253, 230, 138, ${0.82 * a})`);
+        grad.addColorStop(0.58, `rgba(103, 232, 249, ${0.95 * a})`);
+        grad.addColorStop(1, `rgba(14, 116, 144, ${0.72 * a})`);
+      } else if (b.isRoninSilver) {
         grad.addColorStop(0, `rgba(255, 255, 255, ${0.45 * a})`);
         grad.addColorStop(0.35, `rgba(210, 218, 232, ${0.9 * a})`);
         grad.addColorStop(0.65, `rgba(150, 168, 192, ${0.94 * a})`);
@@ -10599,7 +10663,12 @@ let deathSpriteP2 = null;
       ctx.fillStyle = grad;
       ctx.fillRect(x - w / 2, y0, w, y1 - y0);
       const cg = ctx.createLinearGradient(x, y0, x, y1);
-      if (b.isRoninSilver) {
+      if (b.isMartialDragon) {
+        cg.addColorStop(0, `rgba(255, 255, 255, ${0.58 * a})`);
+        cg.addColorStop(0.42, `rgba(255, 248, 180, ${0.9 * a})`);
+        cg.addColorStop(0.72, `rgba(165, 243, 252, ${0.84 * a})`);
+        cg.addColorStop(1, `rgba(34, 211, 238, ${0.55 * a})`);
+      } else if (b.isRoninSilver) {
         cg.addColorStop(0, `rgba(255, 255, 255, ${0.62 * a})`);
         cg.addColorStop(0.5, `rgba(225, 232, 245, ${0.92 * a})`);
         cg.addColorStop(1, `rgba(160, 175, 198, ${0.7 * a})`);
@@ -10618,7 +10687,9 @@ let deathSpriteP2 = null;
       }
       ctx.fillStyle = cg;
       ctx.fillRect(x - coreW / 2, y0, coreW, y1 - y0);
-      ctx.fillStyle = b.isRoninSilver
+      ctx.fillStyle = b.isMartialDragon
+        ? `rgba(255, 255, 255, ${0.46 * a})`
+        : b.isRoninSilver
         ? `rgba(255, 255, 255, ${0.42 * a})`
         : b.isThorThunder
           ? `rgba(255, 255, 255, ${0.38 * a})`
@@ -10711,6 +10782,25 @@ let deathSpriteP2 = null;
         ctx.fillRect(L * 0.5, -iw / 2, L * 0.42, iw);
         ctx.restore();
         ctx.globalAlpha = 1;
+      } else if (p.isMartialQiDot) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const r = p.cyan ? 5.6 : 5.1;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+        if (p.cyan) {
+          g.addColorStop(0, `rgba(255, 255, 255, ${0.96 * alpha})`);
+          g.addColorStop(0.42, `rgba(103, 232, 249, ${0.9 * alpha})`);
+          g.addColorStop(1, `rgba(14, 116, 144, ${0.14 * alpha})`);
+        } else {
+          g.addColorStop(0, `rgba(255, 255, 245, ${0.96 * alpha})`);
+          g.addColorStop(0.46, `rgba(253, 230, 138, ${0.88 * alpha})`);
+          g.addColorStop(1, `rgba(217, 119, 6, ${0.15 * alpha})`);
+        }
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.cyan ? 3.5 : 3.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       } else if (p.isRageGold) {
         ctx.save();
         ctx.globalAlpha = alpha;
