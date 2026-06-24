@@ -195,6 +195,7 @@
   xianglongDragonSprite.src = 'assets/effects/xl18z-dragon-sprite.png';
   const xianglongDragonSpriteLeft = new Image();
   xianglongDragonSpriteLeft.src = 'assets/effects/xl18z-dragon-sprite-left.png';
+  const dragonRoarSfxUrl = 'assets/sounds/dragon.mp3';
 
   // ========== 背景道具（assets/back/obj） ==========
   const bgBench = new Image();
@@ -2805,6 +2806,7 @@ let deathSpriteP2 = null;
       hitIds: new Set(),
       sparkTimer: 0,
     });
+    playDragonRoarSfx();
     for (let i = 0; i < 18; i++) {
       xianglongPalmWaves.push({
         x: pcx + ux * (36 + i * 9),
@@ -3362,6 +3364,8 @@ let deathSpriteP2 = null;
   }
   let ambientStarted = false;
   let bgmMasterGain = null;
+  let dragonRoarAudioBuffer = null;
+  let dragonRoarLoadingPromise = null;
   function ensureAudio() {
     if (!BGM.ctx) BGM.ctx = new (window.AudioContext || window.webkitAudioContext)();
     return BGM.ctx;
@@ -3369,10 +3373,50 @@ let deathSpriteP2 = null;
   function resumeGameAudio() {
     const ctx = ensureAudio();
     if (ctx.state === 'suspended') void ctx.resume();
+    void preloadDragonRoarSfx();
+  }
+  function preloadDragonRoarSfx() {
+    const ctx = ensureAudio();
+    if (dragonRoarAudioBuffer) return Promise.resolve(dragonRoarAudioBuffer);
+    if (dragonRoarLoadingPromise) return dragonRoarLoadingPromise;
+    dragonRoarLoadingPromise = fetch(dragonRoarSfxUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`dragon roar load failed: ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((raw) => ctx.decodeAudioData(raw))
+      .then((buf) => {
+        dragonRoarAudioBuffer = buf;
+        return buf;
+      })
+      .catch((err) => {
+        dragonRoarLoadingPromise = null;
+        console.warn('龙吼音效预加载失败:', err);
+        return null;
+      });
+    return dragonRoarLoadingPromise;
+  }
+  function playDragonRoarSfx() {
+    const ctx = ensureAudio();
+    if (ctx.state === 'suspended') void ctx.resume();
+    if (!dragonRoarAudioBuffer) {
+      void preloadDragonRoarSfx();
+      return;
+    }
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    src.buffer = dragonRoarAudioBuffer;
+    gain.gain.setValueAtTime(0.92, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + Math.max(0.25, src.buffer.duration));
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(t);
   }
   function startAmbientLoop() {
     GunnerHeadshotSfx.ensureLoad();
     GunnerShootSfx.ensureLoad();
+    void preloadDragonRoarSfx();
     BGM.start();
     ambientStarted = true;
   }
